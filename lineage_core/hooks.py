@@ -8,6 +8,7 @@ All lineage recording is exception-isolated: failures are logged but never
 break QGIS operations.
 """
 
+import contextlib
 import logging
 import os
 import threading
@@ -77,8 +78,7 @@ def _extract_input_layer_ids(params: dict) -> list[str]:
     Handles both single layer and list-of-layers parameters.
     Returns a list of layer ID strings.
     """
-    input_keys = ("INPUT", "INPUT_LAYER", "LAYERS", "INPUT1", "INPUT2",
-                  "OVERLAY", "LAYER", "SOURCE_LAYER")
+    input_keys = ("INPUT", "INPUT_LAYER", "LAYERS", "INPUT1", "INPUT2", "OVERLAY", "LAYER", "SOURCE_LAYER")
     ids: list[str] = []
 
     for key in input_keys:
@@ -176,8 +176,7 @@ def _record_processing_lineage(
     parent_metadata: list[dict] = []
     parent_checksums: dict[str, str] = {}
 
-    for key in ("INPUT", "INPUT_LAYER", "OVERLAY", "LAYER", "SOURCE_LAYER",
-                "INPUT1", "INPUT2", "LAYERS"):
+    for key in ("INPUT", "INPUT_LAYER", "OVERLAY", "LAYER", "SOURCE_LAYER", "INPUT1", "INPUT2", "LAYERS"):
         value = params.get(key)
         if value is None:
             continue
@@ -249,8 +248,10 @@ def _sanitize_params(params: dict) -> dict:
             safe[key] = value
         elif isinstance(value, (list, tuple)):
             safe[key] = [
-                f"<layer:{v.id()}>" if hasattr(v, "id") and callable(v.id)
-                else v if isinstance(v, (str, int, float, bool, type(None)))
+                f"<layer:{v.id()}>"
+                if hasattr(v, "id") and callable(v.id)
+                else v
+                if isinstance(v, (str, int, float, bool, type(None)))
                 else str(v)
                 for v in value
             ]
@@ -413,10 +414,7 @@ def _uninstall_filewriter_hook() -> None:
         QgsVectorFileWriter.writeAsVectorFormatV3 = original
         logger.debug("QgsVectorFileWriter.writeAsVectorFormatV3() restored")
     else:
-        logger.warning(
-            "QgsVectorFileWriter.writeAsVectorFormatV3() identity mismatch — "
-            "skipping restoration"
-        )
+        logger.warning("QgsVectorFileWriter.writeAsVectorFormatV3() identity mismatch — skipping restoration")
 
     _hook_state["filewriter_original"] = None
     _hook_state["filewriter_wrapper"] = None
@@ -458,6 +456,7 @@ def _record_export_lineage(args: tuple, kwargs: dict, result: Any) -> None:
     parent_checksums: dict[str, str] = {}
     try:
         from .checksum import compute_checksum
+
         parent_checksums[source_path] = compute_checksum(source_path)
     except Exception:
         logger.debug("Could not compute checksum for %s", source_path)
@@ -492,7 +491,7 @@ def _install_edit_signals() -> None:
     _hook_state["signal_connections"].append(("layersAdded", connection))
 
     # Connect to existing GeoPackage layers
-    for layer_id, layer in project.mapLayers().items():
+    for _layer_id, layer in project.mapLayers().items():
         _connect_edit_signals(layer)
 
     logger.debug("Edit signals installed")
@@ -505,18 +504,14 @@ def _uninstall_edit_signals() -> None:
     except ImportError:
         return
 
-    try:
-        project = QgsProject.instance()
+    project = QgsProject.instance()
+    with contextlib.suppress(TypeError, RuntimeError):
         project.layersAdded.disconnect(_on_layers_added)
-    except (TypeError, RuntimeError):
-        pass  # Already disconnected or project destroyed
 
     # Disconnect per-layer signals
-    for layer_id, handler in list(_hook_state.get("_layer_edit_connections", {}).items()):
-        try:
+    for _layer_id, handler in list(_hook_state.get("_layer_edit_connections", {}).items()):
+        with contextlib.suppress(TypeError, RuntimeError):
             handler()  # Each handler is a disconnect callable
-        except (TypeError, RuntimeError):
-            pass
 
     _hook_state["signal_connections"] = []
     _hook_state["_layer_edit_connections"] = {}
@@ -577,14 +572,10 @@ def _connect_edit_signals(layer: Any) -> None:
     edit_connections = _hook_state.setdefault("_layer_edit_connections", {})
 
     def _disconnect() -> None:
-        try:
+        with contextlib.suppress(TypeError, RuntimeError):
             layer.beforeCommitChanges.disconnect(_on_before_commit)
-        except (TypeError, RuntimeError):
-            pass
-        try:
+        with contextlib.suppress(TypeError, RuntimeError):
             layer.afterCommitChanges.disconnect(_on_after_commit)
-        except (TypeError, RuntimeError):
-            pass
 
     edit_connections[layer_id] = _disconnect
     logger.debug("Connected edit signals for layer %s (%s)", layer_id, base_path)

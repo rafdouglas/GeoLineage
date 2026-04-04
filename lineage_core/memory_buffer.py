@@ -1,4 +1,5 @@
 import logging
+
 from .recorder import record_processing
 from .settings import LOGGER_NAME
 
@@ -113,9 +114,7 @@ class MemoryBuffer:
         self._links.pop(layer_id, None)
         # Also remove this layer_id from other nodes' parent lists
         for node_id in list(self._links.keys()):
-            self._links[node_id] = [
-                pid for pid in self._links[node_id] if pid != layer_id
-            ]
+            self._links[node_id] = [pid for pid in self._links[node_id] if pid != layer_id]
             if not self._links[node_id]:
                 del self._links[node_id]
 

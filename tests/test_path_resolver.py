@@ -1,7 +1,5 @@
 """Tests for lineage_retrieval.path_resolver module."""
 
-import pytest
-
 from GeoLineage.lineage_retrieval.path_resolver import resolve
 
 

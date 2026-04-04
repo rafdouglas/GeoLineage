@@ -15,8 +15,7 @@ def _make_gpkg(path) -> str:
         organization TEXT NOT NULL, organization_coordsys_id INTEGER NOT NULL,
         definition TEXT NOT NULL, description TEXT)""")
     conn.execute(
-        "INSERT INTO gpkg_spatial_ref_sys VALUES "
-        "('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\"]', 'WGS 84')"
+        "INSERT INTO gpkg_spatial_ref_sys VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\"]', 'WGS 84')"
     )
     conn.execute("""CREATE TABLE gpkg_contents (
         table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL,
@@ -45,6 +44,7 @@ def _make_entry(layer_name: str = "rivers", tool: str = "clip") -> dict:
 # 1. test_add_stores_entry
 # ---------------------------------------------------------------------------
 
+
 def test_add_stores_entry():
     buf = MemoryBuffer()
     entry = _make_entry("rivers")
@@ -59,6 +59,7 @@ def test_add_stores_entry():
 # ---------------------------------------------------------------------------
 # 2. test_link_chain
 # ---------------------------------------------------------------------------
+
 
 def test_link_chain():
     buf = MemoryBuffer()
@@ -81,6 +82,7 @@ def test_link_chain():
 # 3. test_get_chain_unknown_id
 # ---------------------------------------------------------------------------
 
+
 def test_get_chain_unknown_id():
     buf = MemoryBuffer()
     chain = buf.get_chain("nonexistent")
@@ -90,6 +92,7 @@ def test_get_chain_unknown_id():
 # ---------------------------------------------------------------------------
 # 4. test_link_empty_list_noop
 # ---------------------------------------------------------------------------
+
 
 def test_link_empty_list_noop():
     buf = MemoryBuffer()
@@ -107,6 +110,7 @@ def test_link_empty_list_noop():
 # 5. test_cycle_detection
 # ---------------------------------------------------------------------------
 
+
 def test_cycle_detection():
     buf = MemoryBuffer()
     buf.add("A", _make_entry("a"))
@@ -122,6 +126,7 @@ def test_cycle_detection():
 # 6. test_flush_writes_to_gpkg
 # ---------------------------------------------------------------------------
 
+
 def test_flush_writes_to_gpkg(tmp_path):
     gpkg = _make_gpkg(tmp_path / "test.gpkg")
     buf = MemoryBuffer()
@@ -135,9 +140,7 @@ def test_flush_writes_to_gpkg(tmp_path):
     buf.flush("B", gpkg)
 
     with sqlite3.connect(gpkg) as conn:
-        rows = conn.execute(
-            f"SELECT layer_name, operation_tool FROM {LINEAGE_TABLE} ORDER BY id"
-        ).fetchall()
+        rows = conn.execute(f"SELECT layer_name, operation_tool FROM {LINEAGE_TABLE} ORDER BY id").fetchall()
 
     assert len(rows) == 2
     assert rows[0] == ("layer_a", "buffer")
@@ -148,6 +151,7 @@ def test_flush_writes_to_gpkg(tmp_path):
 # 7. test_flush_unknown_noop
 # ---------------------------------------------------------------------------
 
+
 def test_flush_unknown_noop(tmp_path):
     gpkg = _make_gpkg(tmp_path / "test.gpkg")
     buf = MemoryBuffer()
@@ -156,12 +160,7 @@ def test_flush_unknown_noop(tmp_path):
     buf.flush("ghost", gpkg)
 
     with sqlite3.connect(gpkg) as conn:
-        tables = {
-            row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
 
     # _lineage table should not even be created
     assert LINEAGE_TABLE not in tables
@@ -170,6 +169,7 @@ def test_flush_unknown_noop(tmp_path):
 # ---------------------------------------------------------------------------
 # 8. test_discard_removes_entries
 # ---------------------------------------------------------------------------
+
 
 def test_discard_removes_entries():
     buf = MemoryBuffer()
@@ -183,6 +183,7 @@ def test_discard_removes_entries():
 # ---------------------------------------------------------------------------
 # 9. test_discard_removes_from_links
 # ---------------------------------------------------------------------------
+
 
 def test_discard_removes_from_links():
     buf = MemoryBuffer()
@@ -203,6 +204,7 @@ def test_discard_removes_from_links():
 # ---------------------------------------------------------------------------
 # 10. test_flush_cleans_up
 # ---------------------------------------------------------------------------
+
 
 def test_flush_cleans_up(tmp_path):
     gpkg = _make_gpkg(tmp_path / "test.gpkg")

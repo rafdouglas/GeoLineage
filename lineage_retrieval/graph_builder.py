@@ -1,5 +1,6 @@
 """Build a lineage graph from a GeoPackage file by traversing parent references."""
 
+import contextlib
 import json
 import logging
 import os
@@ -146,10 +147,8 @@ def build_graph(
 
             stored_checksums: dict[str, str] = {}
             if raw_checksums:
-                try:
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
                     stored_checksums = json.loads(raw_checksums)
-                except (json.JSONDecodeError, TypeError):
-                    pass
 
             for parent_ref in parent_files:
                 parent_refs.append((parent_ref, entry_id))
@@ -174,11 +173,13 @@ def build_graph(
         # Enqueue parents and create edges
         for parent_ref, entry_id in parent_refs:
             resolved_parent, _ = resolve(parent_ref, project_dir)
-            edges.append(LineageEdge(
-                parent_path=resolved_parent,
-                child_path=path,
-                entry_id=entry_id,
-            ))
+            edges.append(
+                LineageEdge(
+                    parent_path=resolved_parent,
+                    child_path=path,
+                    entry_id=entry_id,
+                )
+            )
             if depth < max_depth and resolved_parent not in visited:
                 queue.append((resolved_parent, depth + 1))
 

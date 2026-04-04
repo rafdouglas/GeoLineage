@@ -4,10 +4,11 @@ Provides toolbar toggle for enabling/disabling lineage recording.
 Persists toggle state in project custom properties.
 """
 
+import contextlib
 import logging
 import os
 
-from .lineage_core.settings import LOGGER_NAME, SETTING_ENABLED
+from .lineage_core.settings import LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.plugin")
 
@@ -26,10 +27,9 @@ class GeoLineagePlugin:
 
     def initGui(self) -> None:
         """Called by QGIS when the plugin is loaded. Sets up toolbar and actions."""
-        from qgis.PyQt.QtCore import Qt
+        from qgis.core import QgsProject
         from qgis.PyQt.QtGui import QIcon
         from qgis.PyQt.QtWidgets import QAction
-        from qgis.core import QgsProject
 
         # Create toolbar
         self.toolbar = self.iface.addToolBar("GeoLineage")
@@ -67,10 +67,8 @@ class GeoLineagePlugin:
             self._disable_recording()
 
         # Disconnect project signal
-        try:
+        with contextlib.suppress(TypeError, RuntimeError):
             QgsProject.instance().readProject.disconnect(self._on_project_read)
-        except (TypeError, RuntimeError):
-            pass
 
         # Remove GUI elements
         if self.toggle_action:
@@ -98,6 +96,7 @@ class GeoLineagePlugin:
     def _enable_recording(self) -> None:
         """Enable lineage recording by installing hooks."""
         from .lineage_core.hooks import install_hooks
+
         install_hooks()
         self._enabled = True
         logger.info("Lineage recording enabled")
@@ -105,6 +104,7 @@ class GeoLineagePlugin:
     def _disable_recording(self) -> None:
         """Disable lineage recording by uninstalling hooks."""
         from .lineage_core.hooks import uninstall_hooks
+
         uninstall_hooks()
         self._enabled = False
         logger.info("Lineage recording disabled")
@@ -112,18 +112,19 @@ class GeoLineagePlugin:
     def _save_toggle_state(self, enabled: bool) -> None:
         """Save toggle state to current project's custom properties."""
         from qgis.core import QgsProject
+
         project = QgsProject.instance()
         project.writeEntry("GeoLineage", _PROJECT_PROPERTY_KEY, enabled)
 
     def _restore_toggle_state(self) -> None:
         """Restore toggle state from current project's custom properties."""
         from qgis.core import QgsProject
+
         project = QgsProject.instance()
         enabled, ok = project.readBoolEntry("GeoLineage", _PROJECT_PROPERTY_KEY, False)
-        if ok and enabled:
+        if ok and enabled and self.toggle_action:
             # Set checked state — this will trigger _on_toggle
-            if self.toggle_action:
-                self.toggle_action.setChecked(True)
+            self.toggle_action.setChecked(True)
 
     def _on_project_read(self) -> None:
         """Handle project load — restore toggle state."""
@@ -132,6 +133,7 @@ class GeoLineagePlugin:
     def _update_icon(self, enabled: bool) -> None:
         """Update toggle action icon based on state."""
         from qgis.PyQt.QtGui import QIcon
+
         icon_path = os.path.join(os.path.dirname(__file__), "resources")
         icon_file = "icon_on.png" if enabled else "icon_off.png"
         if self.toggle_action:

@@ -2,15 +2,13 @@
 
 import sqlite3
 
-import pytest
-
 from GeoLineage.lineage_core.checksum import compute_checksum
 from GeoLineage.lineage_core.settings import LINEAGE_TABLE, META_TABLE
-
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 def _make_gpkg(path):
     """Create a minimal valid GeoPackage and return the open connection."""
@@ -21,8 +19,7 @@ def _make_gpkg(path):
         organization TEXT NOT NULL, organization_coordsys_id INTEGER NOT NULL,
         definition TEXT NOT NULL, description TEXT)""")
     conn.execute(
-        "INSERT INTO gpkg_spatial_ref_sys VALUES "
-        "('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\"]', 'WGS 84')"
+        "INSERT INTO gpkg_spatial_ref_sys VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\"]', 'WGS 84')"
     )
     conn.execute("""CREATE TABLE gpkg_contents (
         table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL,
@@ -34,8 +31,7 @@ def _make_gpkg(path):
 
 def _register_table(conn, table_name):
     conn.execute(
-        "INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) "
-        "VALUES (?, 'attributes', ?, 4326)",
+        "INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?, 'attributes', ?, 4326)",
         (table_name, table_name),
     )
 
@@ -43,6 +39,7 @@ def _register_table(conn, table_name):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_compute_checksum_returns_hex_string(tmp_path):
     """Result is a 64-character lowercase hex string (SHA-256)."""
@@ -83,6 +80,7 @@ def test_identical_data_same_checksum(tmp_path):
 
 def test_different_data_different_checksum(tmp_path):
     """Changing a row value produces a different checksum."""
+
     def _build(name, value):
         path = tmp_path / name
         conn = _make_gpkg(path)
@@ -101,6 +99,7 @@ def test_different_data_different_checksum(tmp_path):
 
 def test_excludes_lineage_tables(tmp_path):
     """Adding _lineage / _lineage_meta data does not change the checksum."""
+
     def _build(name, include_lineage):
         path = tmp_path / name
         conn = _make_gpkg(path)
@@ -108,16 +107,10 @@ def test_excludes_lineage_tables(tmp_path):
         conn.execute("INSERT INTO pts VALUES (1, 'Alpha')")
         _register_table(conn, "pts")
         if include_lineage:
-            conn.execute(
-                f"CREATE TABLE {LINEAGE_TABLE} (id INTEGER PRIMARY KEY, data TEXT)"
-            )
-            conn.execute(
-                f"INSERT INTO {LINEAGE_TABLE} VALUES (1, 'some lineage data')"
-            )
+            conn.execute(f"CREATE TABLE {LINEAGE_TABLE} (id INTEGER PRIMARY KEY, data TEXT)")
+            conn.execute(f"INSERT INTO {LINEAGE_TABLE} VALUES (1, 'some lineage data')")
             _register_table(conn, LINEAGE_TABLE)
-            conn.execute(
-                f"CREATE TABLE {META_TABLE} (key TEXT PRIMARY KEY, value TEXT)"
-            )
+            conn.execute(f"CREATE TABLE {META_TABLE} (key TEXT PRIMARY KEY, value TEXT)")
             conn.execute(f"INSERT INTO {META_TABLE} VALUES ('version', '1')")
             _register_table(conn, META_TABLE)
         conn.commit()
@@ -168,6 +161,7 @@ def test_null_values_serialized(tmp_path):
 
 def test_type_tag_differentiation(tmp_path):
     """Integer 0 and NULL produce different checksums (type tags distinguish them)."""
+
     def _build(name, value):
         path = tmp_path / name
         conn = _make_gpkg(path)
@@ -188,9 +182,7 @@ def test_column_order_deterministic(tmp_path):
     """Checksum uses PRAGMA cid order, producing a stable result on repeated calls."""
     path = tmp_path / "det.gpkg"
     conn = _make_gpkg(path)
-    conn.execute(
-        "CREATE TABLE pts (id INTEGER PRIMARY KEY, name TEXT, score REAL)"
-    )
+    conn.execute("CREATE TABLE pts (id INTEGER PRIMARY KEY, name TEXT, score REAL)")
     conn.execute("INSERT INTO pts VALUES (1, 'Alpha', 9.5)")
     conn.execute("INSERT INTO pts VALUES (2, 'Beta', 7.0)")
     _register_table(conn, "pts")

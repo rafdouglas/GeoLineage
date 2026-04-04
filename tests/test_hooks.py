@@ -4,21 +4,19 @@ Tests re-entrancy guard, exception isolation, identity check,
 and helper functions — all without QGIS dependency.
 """
 
+import contextlib
 import types
-import pytest
 
 from GeoLineage.lineage_core.hooks import (
-    _get_depth,
-    _increment_depth,
     _decrement_depth,
-    _is_gpkg_path,
     _extract_input_layer_ids,
+    _get_depth,
     _get_layer_id,
-    _sanitize_params,
-    _hook_state,
+    _increment_depth,
+    _is_gpkg_path,
     _local,
+    _sanitize_params,
 )
-
 
 # --- Re-entrancy guard tests ---
 
@@ -100,10 +98,8 @@ class TestExceptionIsolation:
 
         # Simulate the wrapper pattern from hooks.py
         result = original_run("native:buffer", {})
-        try:
+        with contextlib.suppress(Exception):
             bad_recorder(result)
-        except Exception:
-            pass  # This is what the wrapper does
 
         assert result == original_result
 
@@ -136,8 +132,9 @@ class TestIdentityCheck:
     def test_identity_check_matches_wrapper(self):
         """When processing.run is still our wrapper, identity check passes."""
         mock_module = types.SimpleNamespace()
-        original = lambda *a, **k: None
-        wrapper = lambda *a, **k: None
+
+        def wrapper(*a, **k):
+            return None
 
         mock_module.run = wrapper
 
@@ -146,8 +143,12 @@ class TestIdentityCheck:
     def test_identity_check_fails_when_another_wraps(self):
         """If another plugin wraps after us, identity check should fail."""
         mock_module = types.SimpleNamespace()
-        our_wrapper = lambda *a, **k: None
-        other_wrapper = lambda *a, **k: None
+
+        def our_wrapper(*a, **k):
+            return None
+
+        def other_wrapper(*a, **k):
+            return None
 
         mock_module.run = other_wrapper
 
@@ -156,9 +157,15 @@ class TestIdentityCheck:
     def test_restoration_skipped_on_identity_mismatch(self):
         """Simulates the uninstall logic: skip restoration if identity doesn't match."""
         mock_module = types.SimpleNamespace()
-        original = lambda *a, **k: "original"
-        our_wrapper = lambda *a, **k: "ours"
-        other_wrapper = lambda *a, **k: "theirs"
+
+        def original(*a, **k):
+            return "original"
+
+        def our_wrapper(*a, **k):
+            return "ours"
+
+        def other_wrapper(*a, **k):
+            return "theirs"
 
         mock_module.run = other_wrapper
 

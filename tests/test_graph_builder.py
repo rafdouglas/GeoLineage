@@ -3,7 +3,6 @@
 import json
 import os
 import sqlite3
-import threading
 import time
 
 import pytest
@@ -19,10 +18,10 @@ from GeoLineage.lineage_retrieval.graph_builder import (
     build_graph,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_gpkg(path: str, table_name: str = "points", rows=None):
     """Create a minimal valid GeoPackage with a data table."""
@@ -55,9 +54,7 @@ def _init_gpkg(path: str, table_name: str = "points", rows=None):
     conn.execute(f"""
         CREATE TABLE {table_name} (id INTEGER PRIMARY KEY, name TEXT)
     """)
-    conn.executemany(
-        f"INSERT INTO {table_name} (id, name) VALUES (?, ?)", rows
-    )
+    conn.executemany(f"INSERT INTO {table_name} (id, name) VALUES (?, ?)", rows)
     conn.execute(f"""
         INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id)
         VALUES ('{table_name}', 'attributes', '{table_name}', 4326)
@@ -92,6 +89,7 @@ def _link_parent(child_path, parent_path, tool="native:buffer"):
 # US-301: Data structure tests
 # ---------------------------------------------------------------------------
 
+
 class TestDataStructures:
     def test_lineage_node_frozen(self):
         node = LineageNode("p", "present", (), "f.gpkg", 0, False)
@@ -110,13 +108,16 @@ class TestDataStructures:
 
     def test_no_qgis_imports(self):
         import GeoLineage.lineage_retrieval.graph_builder as mod
-        src = open(mod.__file__).read()
+
+        with open(mod.__file__) as f:
+            src = f.read()
         assert "qgis" not in src.lower() or "qgis" in src.lower().split("#")[0] is False
 
 
 # ---------------------------------------------------------------------------
 # US-302: Linear chain traversal
 # ---------------------------------------------------------------------------
+
 
 class TestLinearChain:
     def test_single_node_no_parents(self, tmp_path):
@@ -191,6 +192,7 @@ class TestLinearChain:
 # US-303: Diamond DAG and cycle handling
 # ---------------------------------------------------------------------------
 
+
 class TestDiamondAndCycles:
     def test_diamond_dag(self, tmp_path):
         """A->B, A->C, B->D, C->D — 4 nodes, D not duplicated."""
@@ -222,9 +224,13 @@ class TestDiamondAndCycles:
         a = _make_gpkg(tmp_path, "a.gpkg")
         checksum = compute_checksum(a)
         record_processing(
-            gpkg_path=a, layer_name="output", tool="native:buffer",
-            params={}, parents=[a],
-            parent_metadata=[], parent_checksums={a: checksum},
+            gpkg_path=a,
+            layer_name="output",
+            tool="native:buffer",
+            params={},
+            parents=[a],
+            parent_metadata=[],
+            parent_checksums={a: checksum},
         )
         g = build_graph(a, str(tmp_path))
         assert len(g.nodes) == 1
@@ -234,6 +240,7 @@ class TestDiamondAndCycles:
 # US-304: Node status detection
 # ---------------------------------------------------------------------------
 
+
 class TestNodeStatus:
     def test_missing_parent(self, tmp_path):
         a = _make_gpkg(tmp_path, "a.gpkg")
@@ -241,8 +248,8 @@ class TestNodeStatus:
         ensure_lineage_table(a)
         with sqlite3.connect(a) as conn:
             conn.execute(
-                f"INSERT INTO _lineage (layer_name, operation_summary, parent_files, entry_type) "
-                f"VALUES ('out', 'test', ?, 'processing')",
+                "INSERT INTO _lineage (layer_name, operation_summary, parent_files, entry_type) "
+                "VALUES ('out', 'test', ?, 'processing')",
                 (json.dumps([fake_parent]),),
             )
         g = build_graph(a, str(tmp_path))
@@ -311,6 +318,7 @@ class TestNodeStatus:
 # ---------------------------------------------------------------------------
 # US-305: Depth limit and truncation
 # ---------------------------------------------------------------------------
+
 
 class TestDepthLimit:
     def test_max_depth_zero_root_only(self, tmp_path):
@@ -391,6 +399,7 @@ class TestDepthLimit:
 # US-306: Cache integration
 # ---------------------------------------------------------------------------
 
+
 class TestCacheIntegration:
     def test_cache_hit_on_second_call(self, tmp_path):
         a = _make_gpkg(tmp_path, "a.gpkg")
@@ -425,6 +434,7 @@ class TestCacheIntegration:
 # US-307: Read-only safety and performance
 # ---------------------------------------------------------------------------
 
+
 class TestReadOnlyAndPerformance:
     def test_parent_not_modified(self, tmp_path):
         """Parent file checksum must be identical before and after graph build."""
@@ -454,6 +464,7 @@ class TestReadOnlyAndPerformance:
     def test_all_t1_no_qgis(self):
         """Verify no QGIS imports in graph_builder module."""
         import GeoLineage.lineage_retrieval.graph_builder as mod
+
         with open(mod.__file__) as f:
             source = f.read()
         # Check no qgis imports
@@ -467,6 +478,7 @@ class TestReadOnlyAndPerformance:
 # Edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestEdgeCases:
     def test_empty_parent_files_field(self, tmp_path):
         """Entry with null parent_files should not crash."""
@@ -474,8 +486,7 @@ class TestEdgeCases:
         ensure_lineage_table(a)
         with sqlite3.connect(a) as conn:
             conn.execute(
-                f"INSERT INTO _lineage (layer_name, operation_summary, entry_type) "
-                f"VALUES ('out', 'test', 'processing')"
+                "INSERT INTO _lineage (layer_name, operation_summary, entry_type) VALUES ('out', 'test', 'processing')"
             )
         g = build_graph(a, str(tmp_path))
         assert len(g.nodes) == 1
@@ -486,8 +497,8 @@ class TestEdgeCases:
         ensure_lineage_table(a)
         with sqlite3.connect(a) as conn:
             conn.execute(
-                f"INSERT INTO _lineage (layer_name, operation_summary, parent_files, entry_type) "
-                f"VALUES ('out', 'test', 'not-json', 'processing')"
+                "INSERT INTO _lineage (layer_name, operation_summary, parent_files, entry_type) "
+                "VALUES ('out', 'test', 'not-json', 'processing')"
             )
         g = build_graph(a, str(tmp_path))
         assert len(g.nodes) == 1
@@ -499,8 +510,10 @@ class TestEdgeCases:
         exported = _make_gpkg(tmp_path, "exported.gpkg")
         checksum = compute_checksum(raw)
         record_export(
-            gpkg_path=exported, layer_name="output",
-            parent_path=raw, parent_metadata=[],
+            gpkg_path=exported,
+            layer_name="output",
+            parent_path=raw,
+            parent_metadata=[],
             parent_checksums={raw: checksum},
         )
         g = build_graph(exported, str(tmp_path))
@@ -515,9 +528,13 @@ class TestEdgeCases:
         cs_a = compute_checksum(a)
         cs_b = compute_checksum(b)
         record_processing(
-            gpkg_path=c, layer_name="output", tool="native:merge",
-            params={}, parents=[a, b],
-            parent_metadata=[], parent_checksums={a: cs_a, b: cs_b},
+            gpkg_path=c,
+            layer_name="output",
+            tool="native:merge",
+            params={},
+            parents=[a, b],
+            parent_metadata=[],
+            parent_checksums={a: cs_a, b: cs_b},
         )
         g = build_graph(c, str(tmp_path))
         assert len(g.nodes) == 3

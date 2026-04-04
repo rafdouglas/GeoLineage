@@ -1,6 +1,7 @@
 import logging
 import sqlite3
-from .settings import LINEAGE_TABLE, META_TABLE, SCHEMA_VERSION, LOGGER_NAME
+
+from .settings import LINEAGE_TABLE, LOGGER_NAME, META_TABLE, SCHEMA_VERSION
 
 logger = logging.getLogger(f"{LOGGER_NAME}.schema")
 
@@ -61,9 +62,7 @@ def get_schema_version(db_path: str) -> str | None:
     """Read schema version from _lineage_meta. Returns None if table doesn't exist."""
     try:
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                f"SELECT value FROM {META_TABLE} WHERE key = 'schema_version'"
-            ).fetchone()
+            row = conn.execute(f"SELECT value FROM {META_TABLE} WHERE key = 'schema_version'").fetchone()
             return row[0] if row else None
     except sqlite3.OperationalError:
         return None
@@ -78,9 +77,7 @@ def read_lineage_rows(db_path: str) -> list[dict]:
     created_at, created_by, entry_type, edit_summary, qgis_sketcher
     """
     with sqlite3.connect(db_path) as conn:
-        pragma_rows = conn.execute(
-            f"PRAGMA table_info({LINEAGE_TABLE})"
-        ).fetchall()
+        pragma_rows = conn.execute(f"PRAGMA table_info({LINEAGE_TABLE})").fetchall()
         actual_columns = {row[1] for row in pragma_rows}
         select_columns = sorted(actual_columns & KNOWN_COLUMNS)
 
@@ -88,8 +85,6 @@ def read_lineage_rows(db_path: str) -> list[dict]:
             return []
 
         cols_sql = ", ".join(select_columns)
-        rows = conn.execute(
-            f"SELECT {cols_sql} FROM {LINEAGE_TABLE}"
-        ).fetchall()
+        rows = conn.execute(f"SELECT {cols_sql} FROM {LINEAGE_TABLE}").fetchall()
 
-        return [dict(zip(select_columns, row)) for row in rows]
+        return [dict(zip(select_columns, row, strict=False)) for row in rows]

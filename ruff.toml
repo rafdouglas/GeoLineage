@@ -1,0 +1,10 @@
+target-version = "py310"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]  # line length handled by formatter, not linter
+
+[lint.per-file-ignores]
+"tests/*" = ["B011", "SIM300"]
+"spike/*" = ["E402"]

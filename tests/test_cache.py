@@ -3,8 +3,6 @@
 import os
 import time
 
-import pytest
-
 from GeoLineage.lineage_retrieval.cache import LineageCache
 
 

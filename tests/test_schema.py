@@ -1,7 +1,5 @@
 import sqlite3
 
-import pytest
-
 from GeoLineage.lineage_core.schema import ensure_lineage_table, get_schema_version, read_lineage_rows
 from GeoLineage.lineage_core.settings import LINEAGE_TABLE, META_TABLE
 
@@ -40,12 +38,7 @@ def test_ensure_lineage_table_creates_tables(tmp_path):
     ensure_lineage_table(db_path)
 
     with sqlite3.connect(db_path) as conn:
-        tables = {
-            row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
 
     assert LINEAGE_TABLE in tables
     assert META_TABLE in tables
@@ -57,9 +50,7 @@ def test_ensure_lineage_table_idempotent(tmp_path):
     ensure_lineage_table(db_path)  # second call must not raise
 
     with sqlite3.connect(db_path) as conn:
-        count = conn.execute(
-            f"SELECT COUNT(*) FROM {META_TABLE} WHERE key = 'schema_version'"
-        ).fetchone()[0]
+        count = conn.execute(f"SELECT COUNT(*) FROM {META_TABLE} WHERE key = 'schema_version'").fetchone()[0]
 
     assert count == 1
 

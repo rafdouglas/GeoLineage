@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+
 from .schema import ensure_lineage_table
 from .settings import LINEAGE_TABLE, LOGGER_NAME
 

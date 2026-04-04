@@ -1,8 +1,6 @@
 import json
 import sqlite3
 
-import pytest
-
 from GeoLineage.lineage_core.recorder import record_edit, record_export, record_processing
 from GeoLineage.lineage_core.settings import LINEAGE_TABLE
 
@@ -43,9 +41,7 @@ def test_record_processing_writes_row(tmp_path):
 
     with sqlite3.connect(gpkg) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)
-        ).fetchone()
+        row = conn.execute(f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)).fetchone()
 
     assert row is not None
     assert row["layer_name"] == "rivers"
@@ -75,9 +71,7 @@ def test_record_processing_json_fields(tmp_path):
 
     with sqlite3.connect(gpkg) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)
-        ).fetchone()
+        row = conn.execute(f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)).fetchone()
 
     assert json.loads(row["operation_params"]) == params
     assert json.loads(row["parent_files"]) == parents
@@ -102,9 +96,7 @@ def test_record_edit_writes_row(tmp_path):
 
     with sqlite3.connect(gpkg) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)
-        ).fetchone()
+        row = conn.execute(f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)).fetchone()
 
     assert row is not None
     assert row["layer_name"] == "parcels"
@@ -127,9 +119,7 @@ def test_record_export_writes_row(tmp_path):
 
     with sqlite3.connect(gpkg) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)
-        ).fetchone()
+        row = conn.execute(f"SELECT * FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)).fetchone()
 
     assert row is not None
     assert row["layer_name"] == "buildings"
@@ -144,12 +134,7 @@ def test_record_calls_ensure_lineage_table(tmp_path):
 
     # Verify _lineage does not exist yet
     with sqlite3.connect(gpkg) as conn:
-        tables = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert "_lineage" not in tables
 
     record_processing(
@@ -163,12 +148,7 @@ def test_record_calls_ensure_lineage_table(tmp_path):
     )
 
     with sqlite3.connect(gpkg) as conn:
-        tables = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert "_lineage" in tables
 
 
@@ -189,9 +169,7 @@ def test_record_processing_returns_rowid(tmp_path):
     assert row_id > 0
 
     with sqlite3.connect(gpkg) as conn:
-        count = conn.execute(
-            f"SELECT COUNT(*) FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)
-        ).fetchone()[0]
+        count = conn.execute(f"SELECT COUNT(*) FROM {LINEAGE_TABLE} WHERE id = ?", (row_id,)).fetchone()[0]
     assert count == 1
 
 
@@ -261,10 +239,7 @@ def test_record_with_created_by(tmp_path):
 
     with sqlite3.connect(gpkg) as conn:
         conn.row_factory = sqlite3.Row
-        rows = {
-            r["id"]: r
-            for r in conn.execute(f"SELECT * FROM {LINEAGE_TABLE}").fetchall()
-        }
+        rows = {r["id"]: r for r in conn.execute(f"SELECT * FROM {LINEAGE_TABLE}").fetchall()}
 
     assert rows[proc_id]["created_by"] == "bob"
     assert rows[edit_id]["created_by"] == "carol"

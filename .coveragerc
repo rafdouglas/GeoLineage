@@ -1,0 +1,5 @@
+[run]
+# hooks.py requires QGIS runtime (T2 tests) and cannot be covered
+# by T1 pure-Python tests. Exclude it so the --cov-fail-under
+# threshold reflects only T1-testable code.
+omit = lineage_core/hooks.py

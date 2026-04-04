@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Run T1 tests with coverage
+        # No PYTHONPATH env var needed: tests/conftest.py handles import
+        # resolution via sys.path manipulation (adds the project root).
+        run: >
+          pytest tests/ -v
+          --cov=lineage_core
+          --cov=lineage_retrieval
+          --cov-report=term-missing
+          --cov-fail-under=70
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage
+
+  # -----------------------------------------------------------
+  # SPLIT-POINT: Extract release into .github/workflows/release.yml
+  # when T2 QGIS tests are added (to keep test and release triggers
+  # independent).
+  # -----------------------------------------------------------
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build plugin ZIP
+        # release.sh is called without flags (ZIP-only mode).
+        # The --upload flag exists for manual QGIS repo uploads
+        # but is not used in CI.
+        run: bash scripts/release.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/GeoLineage-*.zip
+          generate_release_notes: true
+          draft: false
