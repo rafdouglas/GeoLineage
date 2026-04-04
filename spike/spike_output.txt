@@ -1,0 +1,114 @@
+Qt: Session management error: Could not open network socket
+/home/rafd/localSVN/github/GeoLineage/spike/validate_qgis_assumptions.py:72: DeprecationWarning: QgsField constructor is deprecated
+  provider.addAttributes([QgsField("name", QVariant.String)])
+/home/rafd/localSVN/github/GeoLineage/spike/validate_qgis_assumptions.py:90: DeprecationWarning: QgsVectorFileWriter.writeAsVectorFormat() is deprecated
+  error_code, error_msg = QgsVectorFileWriter.writeAsVectorFormat(
+/home/rafd/localSVN/github/GeoLineage/spike/validate_qgis_assumptions.py:319: DeprecationWarning: QgsVectorFileWriter.writeAsVectorFormat() is deprecated
+  error_code, error_msg = QgsVectorFileWriter.writeAsVectorFormat(
+======================================================================
+GeoLineage Spike — Phase 1.5
+======================================================================
+[OK] QGIS 3.44.7-Solothurn initialized (headless)
+[OK] Processing framework initialized
+
+[OK] Test GeoPackage created: /tmp/geolineage_spike_bigsrvz5/input.gpkg
+     Features: 3, CRS: EPSG:4326
+
+----------------------------------------------------------------------
+TEST 1: Monkey-patching processing.run()
+----------------------------------------------------------------------
+[OK] processing.run() successfully monkey-patched
+
+----------------------------------------------------------------------
+TEST 2: Chain processing steps, observe layer IDs
+----------------------------------------------------------------------
+[OK] Input layer loaded: id=input_06b4f6a0_5cb3_4e46_a9ca_4c9cdffac31e, source=/tmp/geolineage_spike_bigsrvz5/input.gpkg
+
+  Step A: native:buffer -> temp output
+  [WRAP] Intercepted: native:buffer
+  [OK] Buffer result: type=QgsVectorLayer, id=output_bcd6c8c3_ceab_4f28_9ecb_0d9b76e0af73, valid=True, features=3
+       source=MultiPolygon?crs=EPSG:4326&field=fid:long(0,0)&field=name:string(0,0)&uid={5bb3b843-5267-40df-ba27-5601d8b1fe09}
+
+  Step B: native:dissolve on buffer output -> temp output
+  [WRAP] Intercepted: native:dissolve
+  [OK] Dissolve result: type=QgsVectorLayer, id=output_be0d489f_4309_46ad_8b1d_73f1a7926ab6, valid=True, features=1
+       source=MultiPolygon?crs=EPSG:4326&field=fid:long(0,0)&field=name:string(0,0)&uid={bebfee54-ee4e-4eda-9e21-b203bcd429b7}
+
+  Step C: Save final result to GeoPackage
+  [WRAP] Intercepted: native:savefeatures
+  [OK] Saved to: /tmp/geolineage_spike_bigsrvz5/output.gpkg
+       Result OUTPUT is a string path: /tmp/geolineage_spike_bigsrvz5/output.gpkg
+
+----------------------------------------------------------------------
+TEST 3: Layer ID analysis
+----------------------------------------------------------------------
+  Input layer ID:          input_06b4f6a0_5cb3_4e46_a9ca_4c9cdffac31e
+  Buffer output layer ID:  output_bcd6c8c3_ceab_4f28_9ecb_0d9b76e0af73
+  Dissolve output layer ID: output_be0d489f_4309_46ad_8b1d_73f1a7926ab6
+
+  All IDs unique: True
+  ID format analysis:
+    input: length=42, has_underscore=True, starts_with=input_06b4f6a0_5cb3_...
+    buffer_output: length=43, has_underscore=True, starts_with=output_bcd6c8c3_ceab...
+    dissolve_output: length=43, has_underscore=True, starts_with=output_be0d489f_4309...
+
+----------------------------------------------------------------------
+TEST 4: Export detection mechanisms
+----------------------------------------------------------------------
+  A) QgsVectorFileWriter signal inspection:
+     Signal-like attributes: NONE
+
+  B) QgsProject layer-related signals:
+     Relevant signals/methods: ['AvoidIntersectionsCurrentLayer', 'AvoidIntersectionsLayers', 'FlagDontResolveLayers', 'FlagTrustLayerMetadata', 'ForceReadOnlyLayers', 'addMapLayer', 'addMapLayers', 'avoidIntersectionsLayers', 'avoidIntersectionsLayersChanged', 'defaultCrsForNewLayers', 'lastSaveDateTime', 'lastSaveVersion', 'layerIsEmbedded', 'layerLoaded', 'layerRemoved', 'layerStore', 'layerTreeRegistryBridge', 'layerTreeRoot', 'layerWasAdded', 'layerWillBeRemoved']
+
+  C) Signal monitoring during save-to-GeoPackage:
+     QgsVectorFileWriter.writeAsVectorFormat -> error_code=0
+     Signals fired during writeAsVectorFormat: NONE
+
+  D) QgsVectorLayer signals for edit/commit detection:
+     Edit signals: ['afterCommitChanges', 'allowCommitChanged', 'attributeValueChanged', 'beforeCommitChanges', 'beforeEditingStarted', 'changeAttributeValue', 'changeAttributeValues', 'commitChanges', 'commitErrors', 'committedAttributeValuesChanges', 'committedAttributesAdded', 'committedAttributesDeleted', 'committedFeaturesAdded', 'committedFeaturesRemoved', 'committedGeometriesChanges', 'editingStarted', 'editingStopped', 'featuresDeleted', 'startEditing', 'supportsEditing']
+
+----------------------------------------------------------------------
+TEST 5: Re-entrancy check
+----------------------------------------------------------------------
+  [WRAP] Intercepted: native:buffer
+  Ran native:buffer with DISSOLVE=True
+  Total processing.run() calls intercepted: 1
+    Call 0: native:buffer
+  [OK] No re-entrant calls for this algorithm.
+
+----------------------------------------------------------------------
+TEST 6: Uninstall (restore original)
+----------------------------------------------------------------------
+  processing.run is still our wrapper: True
+  Restored original: True
+  [OK] Original processing.run() works after restore
+
+======================================================================
+FINDINGS SUMMARY
+======================================================================
+
+1. MONKEY-PATCHING:
+   - Wrapping processing.run() with closure: WORKS
+   - Wrapper receives correct args: False
+   - Original restored cleanly: True
+
+2. LAYER ID BEHAVIOR:
+   - Input layer ID:   input_06b4f6a0_5cb3_4e46_a9ca_4c9cdffac31e
+   - Buffer output ID: output_bcd6c8c3_ceab_4f28_9ecb_0d9b76e0af73
+   - Dissolve output:  output_be0d489f_4309_46ad_8b1d_73f1a7926ab6
+   - IDs are unique per step: True
+   - IMPLICATION: MemoryBuffer MUST use link() to chain IDs across steps
+
+3. EXPORT DETECTION:
+   - QgsVectorFileWriter signals: NONE - must use alternative
+   - QgsProject layer signals during writeAsVectorFormat: NONE - writeAsVectorFormat is silent
+   - IMPLICATION: Export detection likely needs processing.run interception
+     (native:savefeatures) or monitoring iface actions
+
+4. RE-ENTRANCY:
+   - Check call_log from test above for nested calls
+
+Temp directory (inspect/cleanup): /tmp/geolineage_spike_bigsrvz5
+
+[DONE] Spike complete. Copy output to .omc/plans/spike-1.5-findings.md
