@@ -1,0 +1,17 @@
+[general]
+name=GeoLineage
+qgisMinimumVersion=3.34
+description=Track data lineage in GeoPackage files — records processing, edits, and exports automatically.
+version=0.1.0
+author=rafd
+email=rafd@users.noreply.github.com
+about=GeoLineage embeds lineage metadata directly inside GeoPackage files. Every processing step, manual edit, and file export is recorded in a _lineage table, creating a permanent chain of custody for geospatial data. The plugin intercepts QGIS processing operations, tracks manual edits, and detects exports — all without modifying existing data.
+tracker=https://github.com/rafd/GeoLineage/issues
+repository=https://github.com/rafd/GeoLineage
+tags=geopackage,lineage,provenance,metadata,tracking
+homepage=https://github.com/rafd/GeoLineage
+category=Database
+icon=resources/icon_on.png
+experimental=True
+deprecated=False
+hasProcessingProvider=no
