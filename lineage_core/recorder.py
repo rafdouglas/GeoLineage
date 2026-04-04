@@ -1,8 +1,8 @@
 import json
 import logging
 import sqlite3
-from lineage_core.schema import ensure_lineage_table
-from lineage_core.settings import LINEAGE_TABLE, LOGGER_NAME
+from .schema import ensure_lineage_table
+from .settings import LINEAGE_TABLE, LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.recorder")
 

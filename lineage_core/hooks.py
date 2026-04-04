@@ -13,8 +13,8 @@ import os
 import threading
 from typing import Any
 
-from lineage_core.memory_buffer import MemoryBuffer
-from lineage_core.settings import LOGGER_NAME
+from .memory_buffer import MemoryBuffer
+from .settings import LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.hooks")
 
@@ -162,8 +162,8 @@ def _record_processing_lineage(
 
     Called inside exception isolation — any error here is caught by the wrapper.
     """
-    from lineage_core.checksum import compute_checksum
-    from lineage_core.recorder import record_processing
+    from .checksum import compute_checksum
+    from .recorder import record_processing
 
     input_layer_ids = _extract_input_layer_ids(params)
     layer_id, gpkg_path, layer_name = _get_output_layer_info(result, params)
@@ -427,7 +427,7 @@ def _record_export_lineage(args: tuple, kwargs: dict, result: Any) -> None:
 
     writeAsVectorFormatV3(layer, fileName, transformContext, options, ...)
     """
-    from lineage_core.recorder import record_export
+    from .recorder import record_export
 
     # Check if export succeeded — result is a tuple (error_code, error_message)
     if isinstance(result, tuple) and len(result) >= 1:
@@ -457,7 +457,7 @@ def _record_export_lineage(args: tuple, kwargs: dict, result: Any) -> None:
     # Compute parent checksums
     parent_checksums: dict[str, str] = {}
     try:
-        from lineage_core.checksum import compute_checksum
+        from .checksum import compute_checksum
         parent_checksums[source_path] = compute_checksum(source_path)
     except Exception:
         logger.debug("Could not compute checksum for %s", source_path)
@@ -595,7 +595,7 @@ def _record_edit_lineage(layer: Any, gpkg_path: str, edit_summary: dict) -> None
 
     edit_summary is a pre-captured snapshot from beforeCommitChanges.
     """
-    from lineage_core.recorder import record_edit
+    from .recorder import record_edit
 
     layer_name = layer.name() if hasattr(layer, "name") else "unknown"
 

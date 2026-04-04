@@ -8,11 +8,11 @@ import time
 
 import pytest
 
-from lineage_core.checksum import compute_checksum
-from lineage_core.recorder import record_export, record_processing
-from lineage_core.schema import ensure_lineage_table
-from lineage_retrieval.cache import LineageCache
-from lineage_retrieval.graph_builder import (
+from GeoLineage.lineage_core.checksum import compute_checksum
+from GeoLineage.lineage_core.recorder import record_export, record_processing
+from GeoLineage.lineage_core.schema import ensure_lineage_table
+from GeoLineage.lineage_retrieval.cache import LineageCache
+from GeoLineage.lineage_retrieval.graph_builder import (
     LineageEdge,
     LineageGraph,
     LineageNode,
@@ -109,7 +109,7 @@ class TestDataStructures:
         assert "k" in g.nodes
 
     def test_no_qgis_imports(self):
-        import lineage_retrieval.graph_builder as mod
+        import GeoLineage.lineage_retrieval.graph_builder as mod
         src = open(mod.__file__).read()
         assert "qgis" not in src.lower() or "qgis" in src.lower().split("#")[0] is False
 
@@ -453,7 +453,7 @@ class TestReadOnlyAndPerformance:
 
     def test_all_t1_no_qgis(self):
         """Verify no QGIS imports in graph_builder module."""
-        import lineage_retrieval.graph_builder as mod
+        import GeoLineage.lineage_retrieval.graph_builder as mod
         with open(mod.__file__) as f:
             source = f.read()
         # Check no qgis imports

@@ -18,7 +18,7 @@ A QGIS plugin that tracks data lineage in GeoPackage files. Every processing ste
 
 ## Installation
 
-1. Download the latest release ZIP from the [Releases](https://github.com/rafd/GeoLineage/releases) page
+1. Download the latest release ZIP from the [Releases](https://github.com/rafdouglas/GeoLineage/releases) page
 2. In QGIS: **Plugins > Manage and Install Plugins > Install from ZIP**
 3. Select the downloaded ZIP file and click **Install Plugin**
 4. Enable GeoLineage in the plugin list
@@ -47,7 +47,7 @@ All recording is non-destructive and additive (new rows only, never modifies exi
 ### Setup
 
 ```bash
-git clone https://github.com/rafd/GeoLineage.git
+git clone https://github.com/rafdouglas/GeoLineage.git
 cd GeoLineage
 python -m venv .venv
 source .venv/bin/activate

@@ -1,6 +1,6 @@
 import logging
-from lineage_core.recorder import record_processing
-from lineage_core.settings import LOGGER_NAME
+from .recorder import record_processing
+from .settings import LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.memory_buffer")
 

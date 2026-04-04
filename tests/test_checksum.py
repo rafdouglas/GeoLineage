@@ -4,8 +4,8 @@ import sqlite3
 
 import pytest
 
-from lineage_core.checksum import compute_checksum
-from lineage_core.settings import LINEAGE_TABLE, META_TABLE
+from GeoLineage.lineage_core.checksum import compute_checksum
+from GeoLineage.lineage_core.settings import LINEAGE_TABLE, META_TABLE
 
 
 # ---------------------------------------------------------------------------

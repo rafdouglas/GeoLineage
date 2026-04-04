@@ -39,3 +39,6 @@ htmlcov/
 # OMC state
 .omc/
 .vexp/
+
+# test data
+test_data/

@@ -1,6 +1,6 @@
 import logging
 import sqlite3
-from lineage_core.settings import LINEAGE_TABLE, META_TABLE, SCHEMA_VERSION, LOGGER_NAME
+from .settings import LINEAGE_TABLE, META_TABLE, SCHEMA_VERSION, LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.schema")
 

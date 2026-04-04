@@ -7,7 +7,7 @@ and helper functions — all without QGIS dependency.
 import types
 import pytest
 
-from lineage_core.hooks import (
+from GeoLineage.lineage_core.hooks import (
     _get_depth,
     _increment_depth,
     _decrement_depth,

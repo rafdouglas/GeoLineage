@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from lineage_retrieval.cache import LineageCache
+from GeoLineage.lineage_retrieval.cache import LineageCache
 
 
 def test_get_miss():

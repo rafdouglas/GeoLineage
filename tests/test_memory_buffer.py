@@ -2,8 +2,8 @@ import sqlite3
 
 import pytest
 
-from lineage_core.memory_buffer import MemoryBuffer
-from lineage_core.settings import LINEAGE_TABLE
+from GeoLineage.lineage_core.memory_buffer import MemoryBuffer
+from GeoLineage.lineage_core.settings import LINEAGE_TABLE
 
 
 def _make_gpkg(path) -> str:

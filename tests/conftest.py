@@ -1,5 +1,16 @@
 import sqlite3
+import sys
+from pathlib import Path
+
 import pytest
+
+# Add the project root's *parent* to sys.path so that imports like
+# ``from GeoLineage.lineage_core.settings import ...`` work, and relative
+# imports within lineage_core / lineage_retrieval resolve correctly.
+_project_root = Path(__file__).resolve().parent.parent
+_parent_of_root = _project_root.parent
+if str(_parent_of_root) not in sys.path:
+    sys.path.insert(0, str(_parent_of_root))
 
 
 def _init_gpkg(conn: sqlite3.Connection) -> None:

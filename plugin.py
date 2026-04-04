@@ -7,7 +7,7 @@ Persists toggle state in project custom properties.
 import logging
 import os
 
-from lineage_core.settings import LOGGER_NAME, SETTING_ENABLED
+from .lineage_core.settings import LOGGER_NAME, SETTING_ENABLED
 
 logger = logging.getLogger(f"{LOGGER_NAME}.plugin")
 
@@ -97,14 +97,14 @@ class GeoLineagePlugin:
 
     def _enable_recording(self) -> None:
         """Enable lineage recording by installing hooks."""
-        from lineage_core.hooks import install_hooks
+        from .lineage_core.hooks import install_hooks
         install_hooks()
         self._enabled = True
         logger.info("Lineage recording enabled")
 
     def _disable_recording(self) -> None:
         """Disable lineage recording by uninstalling hooks."""
-        from lineage_core.hooks import uninstall_hooks
+        from .lineage_core.hooks import uninstall_hooks
         uninstall_hooks()
         self._enabled = False
         logger.info("Lineage recording disabled")

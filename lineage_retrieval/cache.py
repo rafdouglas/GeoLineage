@@ -1,6 +1,6 @@
 import logging
 import os
-from lineage_core.settings import LOGGER_NAME
+from ..lineage_core.settings import LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.cache")
 

@@ -7,11 +7,11 @@ import sqlite3
 from collections import deque
 from dataclasses import dataclass
 
-from lineage_core.checksum import compute_checksum
-from lineage_core.schema import get_schema_version, read_lineage_rows
-from lineage_core.settings import LOGGER_NAME
-from lineage_retrieval.cache import LineageCache
-from lineage_retrieval.path_resolver import resolve
+from ..lineage_core.checksum import compute_checksum
+from ..lineage_core.schema import get_schema_version, read_lineage_rows
+from ..lineage_core.settings import LOGGER_NAME
+from .cache import LineageCache
+from .path_resolver import resolve
 
 logger = logging.getLogger(f"{LOGGER_NAME}.graph_builder")
 

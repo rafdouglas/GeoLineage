@@ -2,8 +2,8 @@ import sqlite3
 
 import pytest
 
-from lineage_core.schema import ensure_lineage_table, get_schema_version, read_lineage_rows
-from lineage_core.settings import LINEAGE_TABLE, META_TABLE
+from GeoLineage.lineage_core.schema import ensure_lineage_table, get_schema_version, read_lineage_rows
+from GeoLineage.lineage_core.settings import LINEAGE_TABLE, META_TABLE
 
 
 def _make_gpkg(path) -> str:

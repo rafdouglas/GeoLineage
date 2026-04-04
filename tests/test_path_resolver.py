@@ -2,7 +2,7 @@
 
 import pytest
 
-from lineage_retrieval.path_resolver import resolve
+from GeoLineage.lineage_retrieval.path_resolver import resolve
 
 
 def test_resolve_relative_found(tmp_path):

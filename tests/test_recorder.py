@@ -3,8 +3,8 @@ import sqlite3
 
 import pytest
 
-from lineage_core.recorder import record_edit, record_export, record_processing
-from lineage_core.settings import LINEAGE_TABLE
+from GeoLineage.lineage_core.recorder import record_edit, record_export, record_processing
+from GeoLineage.lineage_core.settings import LINEAGE_TABLE
 
 
 def _make_gpkg(path) -> str:

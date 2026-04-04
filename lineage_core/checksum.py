@@ -2,7 +2,7 @@ import hashlib
 import logging
 import sqlite3
 import struct
-from lineage_core.settings import LINEAGE_TABLE, META_TABLE, LOGGER_NAME
+from .settings import LINEAGE_TABLE, META_TABLE, LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.checksum")
 

@@ -1,6 +1,6 @@
 """Tests for lineage_core.settings constants."""
 
-import lineage_core.settings as settings
+import GeoLineage.lineage_core.settings as settings
 
 
 def test_schema_version_exists():
