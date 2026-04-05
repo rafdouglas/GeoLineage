@@ -6,6 +6,21 @@ from ..lineage_core.settings import LOGGER_NAME
 logger = logging.getLogger(f"{LOGGER_NAME}.path_resolver")
 
 
+def extract_gpkg_path(source: str) -> str | None:
+    """Extract the .gpkg file path from a QGIS layer source URI.
+
+    QGIS vector layer source for GeoPackage looks like:
+    '/path/to/file.gpkg|layername=tablename'
+
+    Returns the path if the source refers to a GeoPackage file,
+    or None otherwise.
+    """
+    if not source:
+        return None
+    path = source.split("|")[0]
+    return path if path.endswith(".gpkg") else None
+
+
 def resolve(parent_ref: str, project_dir: str) -> tuple[str, str]:
     """Resolve a parent file reference to an actual path.
 

@@ -24,6 +24,9 @@ class GeoLineagePlugin:
         self.toolbar = None
         self.toggle_action = None
         self._enabled = False
+        self.dock_widget = None
+        self.show_lineage_action = None
+        self.layer_context_menu_action = None
 
     def initGui(self) -> None:
         """Called by QGIS when the plugin is loaded. Sets up toolbar and actions."""
@@ -50,6 +53,22 @@ class GeoLineagePlugin:
         # Add to Plugins menu
         self.iface.addPluginToMenu("&GeoLineage", self.toggle_action)
 
+        # Show Lineage Graph action
+        self.show_lineage_action = QAction(
+            "Show Lineage Graph",
+            self.iface.mainWindow(),
+        )
+        self.show_lineage_action.triggered.connect(self._show_lineage_for_active_layer)
+        self.iface.addPluginToMenu("&GeoLineage", self.show_lineage_action)
+
+        # Layer tree context menu entry
+        from qgis.core import QgsMapLayer
+
+        self.layer_context_menu_action = QAction("Show Lineage", self.iface.mainWindow())
+        self.layer_context_menu_action.triggered.connect(self._show_lineage_from_context_menu)
+        with contextlib.suppress(Exception):
+            self.iface.addCustomActionForLayerType(self.layer_context_menu_action, "", QgsMapLayer.VectorLayer, True)
+
         # Restore state from project on load
         QgsProject.instance().readProject.connect(self._on_project_read)
 
@@ -69,6 +88,23 @@ class GeoLineagePlugin:
         # Disconnect project signal
         with contextlib.suppress(TypeError, RuntimeError):
             QgsProject.instance().readProject.disconnect(self._on_project_read)
+
+        # Remove viewer dock widget
+        if self.dock_widget:
+            self.iface.removeDockWidget(self.dock_widget)
+            self.dock_widget.deleteLater()
+            self.dock_widget = None
+
+        # Remove show lineage action
+        if self.show_lineage_action:
+            self.iface.removePluginMenu("&GeoLineage", self.show_lineage_action)
+            self.show_lineage_action = None
+
+        # Remove layer context menu action
+        if self.layer_context_menu_action:
+            with contextlib.suppress(Exception):
+                self.iface.removeCustomActionForLayerType(self.layer_context_menu_action)
+            self.layer_context_menu_action = None
 
         # Remove GUI elements
         if self.toggle_action:
@@ -129,6 +165,52 @@ class GeoLineagePlugin:
     def _on_project_read(self) -> None:
         """Handle project load — restore toggle state."""
         self._restore_toggle_state()
+
+    def _show_lineage_for_active_layer(self) -> None:
+        """Show lineage graph for the currently active layer."""
+        from .lineage_retrieval.path_resolver import extract_gpkg_path
+
+        layer = self.iface.activeLayer()
+        if layer is None:
+            self.iface.messageBar().pushWarning("GeoLineage", "No active layer selected.")
+            return
+
+        gpkg_path = extract_gpkg_path(layer.source())
+        if gpkg_path is None:
+            self.iface.messageBar().pushWarning("GeoLineage", "Active layer is not backed by a GeoPackage file.")
+            return
+
+        self._show_lineage_dock(gpkg_path)
+
+    def _show_lineage_from_context_menu(self) -> None:
+        """Show lineage graph from layer tree context menu."""
+        from .lineage_retrieval.path_resolver import extract_gpkg_path
+
+        layer = self.iface.activeLayer()
+        if layer is None:
+            return
+
+        gpkg_path = extract_gpkg_path(layer.source())
+        if gpkg_path is None:
+            self.iface.messageBar().pushInfo("GeoLineage", "Selected layer is not a GeoPackage.")
+            return
+
+        self._show_lineage_dock(gpkg_path)
+
+    def _show_lineage_dock(self, gpkg_path: str) -> None:
+        """Create or reuse dock widget and show lineage for the given path."""
+        from qgis.core import QgsProject
+        from qgis.PyQt.QtCore import Qt
+
+        if self.dock_widget is None:
+            from .lineage_viewer.dock_widget import LineageDockWidget
+
+            self.dock_widget = LineageDockWidget(self.iface, self.iface.mainWindow())
+            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
+
+        project_dir = QgsProject.instance().homePath() or os.path.dirname(gpkg_path)
+        self.dock_widget.show_lineage(gpkg_path, project_dir)
+        self.dock_widget.show()
 
     def _update_icon(self, enabled: bool) -> None:
         """Update toggle action icon based on state."""

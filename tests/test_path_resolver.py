@@ -1,6 +1,6 @@
 """Tests for lineage_retrieval.path_resolver module."""
 
-from GeoLineage.lineage_retrieval.path_resolver import resolve
+from GeoLineage.lineage_retrieval.path_resolver import extract_gpkg_path, resolve
 
 
 def test_resolve_relative_found(tmp_path):
@@ -70,6 +70,27 @@ def test_resolve_path_with_spaces(tmp_path):
 
     assert status == "found"
     assert resolved == str(target)
+
+
+def test_extract_gpkg_path_with_layername():
+    assert extract_gpkg_path("/path/to/file.gpkg|layername=foo") == "/path/to/file.gpkg"
+
+
+def test_extract_gpkg_path_plain():
+    assert extract_gpkg_path("/path/to/file.gpkg") == "/path/to/file.gpkg"
+
+
+def test_extract_gpkg_path_non_gpkg():
+    assert extract_gpkg_path("/path/to/file.shp") is None
+
+
+def test_extract_gpkg_path_empty():
+    assert extract_gpkg_path("") is None
+
+
+def test_extract_gpkg_path_with_multiple_pipes():
+    result = extract_gpkg_path("/data/test.gpkg|layername=pts|subset=id>5")
+    assert result == "/data/test.gpkg"
 
 
 def test_resolve_path_with_unicode(tmp_path):
