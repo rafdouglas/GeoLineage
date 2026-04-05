@@ -21,6 +21,7 @@ STATUS_COLORS: dict[str, str] = {
 }
 
 _HIGHLIGHT_COLOR = "#1565C0"
+_SELECTED_COLOR = "#FF6F00"
 _DEFAULT_NODE_WIDTH = 180.0
 _DEFAULT_NODE_HEIGHT = 60.0
 
@@ -58,6 +59,7 @@ class GraphNodeItem(_get_base_class()):
         self._node = node
         self._position = position
         self._highlighted = False
+        self._selected = False
 
         # Build rounded rect path
         path = QPainterPath()
@@ -141,11 +143,21 @@ class GraphNodeItem(_get_base_class()):
 
     def set_highlighted(self, highlighted: bool) -> None:
         """Toggle search-highlight border (thick blue outline)."""
+        self._highlighted = highlighted
+        self._update_pen()
+
+    def set_selected_highlight(self, selected: bool) -> None:
+        """Toggle selected-node highlight (thick amber outline)."""
+        self._selected = selected
+        self._update_pen()
+
+    def _update_pen(self) -> None:
+        """Apply pen based on precedence: selected > highlighted > default."""
         from qgis.PyQt.QtGui import QColor, QPen
 
-        self._highlighted = highlighted
-        if highlighted:
-            pen = QPen(QColor(_HIGHLIGHT_COLOR), 3.0)
-            self.setPen(pen)
+        if self._selected:
+            self.setPen(QPen(QColor(_SELECTED_COLOR), 3.0))
+        elif self._highlighted:
+            self.setPen(QPen(QColor(_HIGHLIGHT_COLOR), 3.0))
         else:
             self.setPen(self._default_pen)

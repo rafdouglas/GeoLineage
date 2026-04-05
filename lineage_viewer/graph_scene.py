@@ -60,7 +60,7 @@ class LineageGraphScene(_get_base_class()):
     def set_graph(self, graph: LineageGraph) -> None:
         """Clear scene, run layout, create node/edge items."""
         from .graph_edge_item import GraphEdgeItem
-        from .graph_layout import layout_graph
+        from .graph_layout import compute_layout
         from .graph_node_item import GraphNodeItem
 
         self.clear()
@@ -71,26 +71,29 @@ class LineageGraphScene(_get_base_class()):
         if not graph.nodes:
             return
 
-        positions = layout_graph(graph, self._config)
+        result = compute_layout(graph, self._config)
+        selected_node = graph.root_path
 
         # Create node items
         for path, node in graph.nodes.items():
-            if path not in positions:
+            pos = result.node_positions.get(path)
+            if pos is None:
                 continue
-            item = GraphNodeItem(node, positions[path])
+            item = GraphNodeItem(node, pos)
+            if path == selected_node:
+                item.set_selected_highlight(True)
             self.addItem(item)
             self._node_items[path] = item
 
-        # Create edge items
-        for edge in graph.edges:
-            if edge.parent_path not in positions or edge.child_path not in positions:
-                continue
-            item = GraphEdgeItem(
-                edge,
-                positions[edge.parent_path],
-                positions[edge.child_path],
-                self._config,
+        # Create edge items from edge_paths
+        for edge_path in result.edge_paths:
+            matching_edge = next(
+                (e for e in graph.edges if e.parent_path == edge_path.source and e.child_path == edge_path.target),
+                None,
             )
+            if matching_edge is None:
+                continue
+            item = GraphEdgeItem(matching_edge, edge_path.waypoints, self._config)
             self.addItem(item)
             self._edge_items.append(item)
 
