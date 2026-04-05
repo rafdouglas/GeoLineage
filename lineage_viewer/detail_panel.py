@@ -11,24 +11,27 @@ if TYPE_CHECKING:
 from .graph_node_item import STATUS_COLORS
 
 
-class DetailPanel:
+def _get_base_class():
+    """Return QWidget at runtime, object for static analysis."""
+    try:
+        from qgis.PyQt.QtWidgets import QWidget
+
+        return QWidget
+    except ImportError:
+        return object
+
+
+class DetailPanel(_get_base_class()):
     """Panel displaying lineage entry details for a selected node.
 
     Inherits from QWidget at runtime.
     """
 
-    def __new__(cls, *args, **kwargs):
-        from qgis.PyQt.QtWidgets import QWidget
-
-        if not issubclass(cls, QWidget):
-            cls.__bases__ = (QWidget,)
-        return super().__new__(cls)
-
     def __init__(self, parent=None) -> None:
         from qgis.PyQt.QtCore import Qt
         from qgis.PyQt.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
-        QWidget.__init__(self, parent)
+        super().__init__(parent)
 
         self._on_parent_clicked = None
 

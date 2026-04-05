@@ -12,6 +12,7 @@ from GeoLineage.lineage_core.hooks import (
     _extract_input_layer_ids,
     _get_depth,
     _get_layer_id,
+    _get_layer_source_path,
     _increment_depth,
     _is_gpkg_path,
     _local,
@@ -330,3 +331,64 @@ class TestSanitizeParams:
         params = {"WEIRD": object()}
         result = _sanitize_params(params)
         assert isinstance(result["WEIRD"], str)
+
+
+# --- _get_layer_id string handling tests ---
+
+
+class TestGetLayerIdStringHandling:
+    def test_string_returns_none_without_qgis(self):
+        """String layer ID returns None when QgsProject is unavailable (T1 environment)."""
+        assert _get_layer_id("some_layer_id_string") is None
+
+    def test_file_path_string_returns_none(self):
+        """File path strings are not valid layer IDs."""
+        assert _get_layer_id("/path/to/file.gpkg") is None
+
+    def test_empty_string_returns_none(self):
+        assert _get_layer_id("") is None
+
+
+# --- _get_layer_source_path string handling tests ---
+
+
+class TestGetLayerSourcePathStringHandling:
+    def test_existing_file_path_returns_path(self, tmp_path):
+        """String path to an existing file returns the path."""
+        gpkg = tmp_path / "input.gpkg"
+        gpkg.write_bytes(b"dummy")
+        assert _get_layer_source_path(str(gpkg)) == str(gpkg)
+
+    def test_existing_file_with_layername_suffix(self, tmp_path):
+        """String path with |layername= suffix strips suffix and returns base."""
+        gpkg = tmp_path / "input.gpkg"
+        gpkg.write_bytes(b"dummy")
+        assert _get_layer_source_path(f"{gpkg}|layername=points") == str(gpkg)
+
+    def test_nonexistent_file_returns_none(self):
+        """String path to a non-existing file returns None."""
+        assert _get_layer_source_path("/nonexistent/path/file.gpkg") is None
+
+    def test_none_returns_none(self):
+        assert _get_layer_source_path(None) is None
+
+    def test_int_returns_none(self):
+        assert _get_layer_source_path(42) is None
+
+    def test_layer_object_still_works(self, tmp_path):
+        """MockLayer with .source() still works as before."""
+        gpkg = tmp_path / "source.gpkg"
+        gpkg.write_bytes(b"dummy")
+        layer = MockLayer("l1", source=str(gpkg))
+        assert _get_layer_source_path(layer) == str(gpkg)
+
+    def test_layer_object_with_layername_suffix(self, tmp_path):
+        """MockLayer source with |layername= suffix strips it."""
+        gpkg = tmp_path / "source.gpkg"
+        gpkg.write_bytes(b"dummy")
+        layer = MockLayer("l1", source=f"{gpkg}|layername=foo")
+        assert _get_layer_source_path(layer) == str(gpkg)
+
+    def test_string_layer_id_returns_none_without_qgis(self):
+        """String that is not a file path returns None (QgsProject unavailable in T1)."""
+        assert _get_layer_source_path("some_layer_id") is None

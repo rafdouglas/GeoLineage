@@ -10,7 +10,17 @@ if TYPE_CHECKING:
 from .graph_layout import LayoutConfig
 
 
-class LineageGraphScene:
+def _get_base_class():
+    """Return QGraphicsScene at runtime, object for static analysis."""
+    try:
+        from qgis.PyQt.QtWidgets import QGraphicsScene
+
+        return QGraphicsScene
+    except ImportError:
+        return object
+
+
+class LineageGraphScene(_get_base_class()):
     """QGraphicsScene subclass managing lineage graph visualization.
 
     Inherits from QGraphicsScene at runtime to keep module importable
@@ -22,17 +32,8 @@ class LineageGraphScene:
         expand_requested(str)    — node path when truncated node expand triggered
     """
 
-    def __new__(cls, *args, **kwargs):
-        from qgis.PyQt.QtWidgets import QGraphicsScene
-
-        if not issubclass(cls, QGraphicsScene):
-            cls.__bases__ = (QGraphicsScene,)
-        return super().__new__(cls)
-
     def __init__(self, parent=None) -> None:
-        from qgis.PyQt.QtWidgets import QGraphicsScene
-
-        QGraphicsScene.__init__(self, parent)
+        super().__init__(parent)
 
         # Callbacks instead of pyqtSignal: pyqtSignal requires class-level
         # declaration with a QApplication, which would break T1 importability.

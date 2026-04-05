@@ -102,14 +102,29 @@ def _get_layer_id(obj: Any) -> str | None:
     """Extract layer ID from a layer object or string.
 
     Handles QgsMapLayer objects (have .id() method) and string references.
+    For string references, attempts QgsProject lookup to resolve layer IDs.
     """
     if hasattr(obj, "id") and callable(obj.id):
         return obj.id()
+    if isinstance(obj, str):
+        try:
+            from qgis.core import QgsProject
+
+            layer = QgsProject.instance().mapLayer(obj)
+            if layer is not None:
+                return layer.id()
+        except Exception:
+            pass
     return None
 
 
 def _get_layer_source_path(obj: Any) -> str | None:
-    """Extract the file path from a layer object's source."""
+    """Extract the file path from a layer object or string.
+
+    Handles QgsMapLayer objects (have .source() method), direct file path
+    strings (with optional |layername= suffix), and string layer IDs
+    (resolved via QgsProject lookup).
+    """
     if hasattr(obj, "source") and callable(obj.source):
         source = obj.source()
         if isinstance(source, str):
@@ -117,6 +132,24 @@ def _get_layer_source_path(obj: Any) -> str | None:
             base = source.split("|")[0]
             if os.path.isfile(base):
                 return base
+    if isinstance(obj, str):
+        # Try as direct file path (with optional |layername= suffix)
+        base = obj.split("|")[0]
+        if os.path.isfile(base):
+            return base
+        # Try as layer ID string — look up in QgsProject
+        try:
+            from qgis.core import QgsProject
+
+            layer = QgsProject.instance().mapLayer(obj)
+            if layer is not None:
+                source = layer.source()
+                if isinstance(source, str):
+                    base = source.split("|")[0]
+                    if os.path.isfile(base):
+                        return base
+        except Exception:
+            pass
     return None
 
 

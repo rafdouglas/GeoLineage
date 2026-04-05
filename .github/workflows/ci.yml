@@ -33,6 +33,7 @@ jobs:
           pytest tests/ -v
           --cov=lineage_core
           --cov=lineage_retrieval
+          --cov=lineage_viewer
           --cov-report=term-missing
           --cov-fail-under=70
 

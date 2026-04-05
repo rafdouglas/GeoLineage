@@ -3,27 +3,31 @@
 from __future__ import annotations
 
 
-class ViewerToolbar:
+def _get_base_class():
+    """Return QToolBar at runtime, object for static analysis."""
+    try:
+        from qgis.PyQt.QtWidgets import QToolBar
+
+        return QToolBar
+    except ImportError:
+        return object
+
+
+class ViewerToolbar(_get_base_class()):
     """Toolbar for the lineage graph viewer.
 
     Inherits from QToolBar at runtime.
     """
 
-    def __new__(cls, *args, **kwargs):
-        from qgis.PyQt.QtWidgets import QToolBar
-
-        if not issubclass(cls, QToolBar):
-            cls.__bases__ = (QToolBar,)
-        return super().__new__(cls)
-
     def __init__(self, parent=None) -> None:
-        from qgis.PyQt.QtWidgets import QAction, QLineEdit, QToolBar
+        from qgis.PyQt.QtWidgets import QAction, QLineEdit
 
-        QToolBar.__init__(self, "Lineage Viewer", parent)
+        super().__init__("Lineage Viewer", parent)
 
         self._on_fit_requested = None
         self._on_zoom_in_requested = None
         self._on_zoom_out_requested = None
+        self._on_reload_requested = None
         self._on_search_changed = None
         self._on_export_requested = None
 
@@ -44,6 +48,12 @@ class ViewerToolbar:
         self._zoom_out_action.setToolTip("Zoom out")
         self._zoom_out_action.triggered.connect(lambda: self._emit_zoom_out())
         self.addAction(self._zoom_out_action)
+
+        # Reload
+        self._reload_action = QAction("Reload", self)
+        self._reload_action.setToolTip("Reload lineage graph")
+        self._reload_action.triggered.connect(lambda: self._emit_reload())
+        self.addAction(self._reload_action)
 
         self.addSeparator()
 
@@ -74,6 +84,7 @@ class ViewerToolbar:
         on_fit=None,
         on_zoom_in=None,
         on_zoom_out=None,
+        on_reload=None,
         on_search_changed=None,
         on_export=None,
     ) -> None:
@@ -81,6 +92,7 @@ class ViewerToolbar:
         self._on_fit_requested = on_fit
         self._on_zoom_in_requested = on_zoom_in
         self._on_zoom_out_requested = on_zoom_out
+        self._on_reload_requested = on_reload
         self._on_search_changed = on_search_changed
         self._on_export_requested = on_export
 
@@ -103,6 +115,10 @@ class ViewerToolbar:
     def _emit_zoom_out(self) -> None:
         if self._on_zoom_out_requested:
             self._on_zoom_out_requested()
+
+    def _emit_reload(self) -> None:
+        if self._on_reload_requested:
+            self._on_reload_requested()
 
     def _emit_export(self, fmt: str) -> None:
         if self._on_export_requested:

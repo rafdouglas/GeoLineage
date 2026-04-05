@@ -14,10 +14,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(f"{LOGGER_NAME}.dock_widget")
 
 
-class LineageDockWidget:
-    """Dockable widget containing the lineage graph viewer.
+def _get_dock_base():
+    """Return QDockWidget at runtime to avoid import at module level."""
+    from qgis.PyQt.QtWidgets import QDockWidget
 
-    Inherits from QDockWidget at runtime.
+    return QDockWidget
+
+
+class LineageDockWidget(_get_dock_base()):
+    """Dockable widget containing the lineage graph viewer.
 
     Layout:
         +-------------------------------------------+
@@ -27,13 +32,6 @@ class LineageDockWidget:
         | (left, ~70% width)   | (right, ~30%)     |
         +-------------------------------------------+
     """
-
-    def __new__(cls, *args, **kwargs):
-        from qgis.PyQt.QtWidgets import QDockWidget
-
-        if not issubclass(cls, QDockWidget):
-            cls.__bases__ = (QDockWidget,)
-        return super().__new__(cls)
 
     def __init__(self, iface, parent=None) -> None:
         from qgis.PyQt.QtCore import Qt
@@ -52,6 +50,7 @@ class LineageDockWidget:
 
         self._iface = iface
         self._current_graph = None
+        self._current_gpkg_path: str | None = None
         self._project_dir = ""
         self._current_max_depth = 5
 
@@ -88,6 +87,7 @@ class LineageDockWidget:
             on_fit=self._on_fit_to_view,
             on_zoom_in=self._on_zoom_in,
             on_zoom_out=self._on_zoom_out,
+            on_reload=self._on_reload,
             on_search_changed=self._scene.highlight_nodes,
             on_export=self._on_export,
         )
@@ -105,6 +105,7 @@ class LineageDockWidget:
         from ..lineage_retrieval.graph_builder import build_graph
 
         gpkg_path = os.path.abspath(gpkg_path)
+        self._current_gpkg_path = gpkg_path
         self._project_dir = project_dir
         self._current_max_depth = 5
 
@@ -154,6 +155,11 @@ class LineageDockWidget:
         node_item = self._scene.get_node_item(node_path)
         if node_item:
             self._view.centerOn(node_item)
+
+    def _on_reload(self) -> None:
+        """Reload the lineage graph from the current path."""
+        if self._current_gpkg_path and self._project_dir:
+            self.show_lineage(self._current_gpkg_path, self._project_dir)
 
     def _on_fit_to_view(self) -> None:
         from qgis.PyQt.QtCore import Qt

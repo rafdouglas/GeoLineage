@@ -14,20 +14,23 @@ _DEFAULT_NODE_WIDTH = 180.0
 _DEFAULT_NODE_HEIGHT = 60.0
 
 
-class GraphEdgeItem:
+def _get_base_class():
+    """Return QGraphicsPathItem at runtime, object for static analysis."""
+    try:
+        from qgis.PyQt.QtWidgets import QGraphicsPathItem
+
+        return QGraphicsPathItem
+    except ImportError:
+        return object
+
+
+class GraphEdgeItem(_get_base_class()):
     """Bezier curve arrow from parent node to child node.
 
     Inherits from QGraphicsPathItem at runtime. Declared without
     Qt base class at module level so the module can be imported
     in T1 tests (no QApplication needed for import).
     """
-
-    def __new__(cls, *args, **kwargs):
-        from qgis.PyQt.QtWidgets import QGraphicsPathItem
-
-        if not issubclass(cls, QGraphicsPathItem):
-            cls.__bases__ = (QGraphicsPathItem,)
-        return super().__new__(cls)
 
     def __init__(
         self,
@@ -40,9 +43,9 @@ class GraphEdgeItem:
 
         from qgis.PyQt.QtCore import QPointF
         from qgis.PyQt.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF
-        from qgis.PyQt.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem
+        from qgis.PyQt.QtWidgets import QGraphicsPolygonItem
 
-        QGraphicsPathItem.__init__(self)
+        super().__init__()
 
         self._edge = edge
 
