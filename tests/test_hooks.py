@@ -16,6 +16,7 @@ from GeoLineage.lineage_core.hooks import (
     _increment_depth,
     _is_gpkg_path,
     _local,
+    _resolve_output_layer_definition,
     _sanitize_params,
 )
 
@@ -392,3 +393,54 @@ class TestGetLayerSourcePathStringHandling:
     def test_string_layer_id_returns_none_without_qgis(self):
         """String that is not a file path returns None (QgsProject unavailable in T1)."""
         assert _get_layer_source_path("some_layer_id") is None
+
+
+# --- _resolve_output_layer_definition tests ---
+
+
+class MockQgsProperty:
+    """Mock QgsProperty with staticValue()."""
+
+    def __init__(self, value: str):
+        self._value = value
+
+    def staticValue(self) -> str:
+        return self._value
+
+
+class MockOutputLayerDefinition:
+    """Mock QgsProcessingOutputLayerDefinition with .sink attribute."""
+
+    def __init__(self, sink):
+        self.sink = sink
+
+
+class TestResolveOutputLayerDefinition:
+    def test_plain_string_passes_through(self):
+        assert _resolve_output_layer_definition("/path/to/file.gpkg") == "/path/to/file.gpkg"
+
+    def test_none_passes_through(self):
+        assert _resolve_output_layer_definition(None) is None
+
+    def test_layer_object_passes_through(self):
+        layer = MockLayer("abc")
+        result = _resolve_output_layer_definition(layer)
+        assert result is layer
+
+    def test_definition_with_qgs_property_sink(self):
+        prop = MockQgsProperty("/data/output.gpkg")
+        defn = MockOutputLayerDefinition(sink=prop)
+        assert _resolve_output_layer_definition(defn) == "/data/output.gpkg"
+
+    def test_definition_with_string_sink(self):
+        defn = MockOutputLayerDefinition(sink="/data/output.gpkg")
+        assert _resolve_output_layer_definition(defn) == "/data/output.gpkg"
+
+    def test_definition_with_unknown_sink_type(self):
+        """When sink exists but is neither string nor has staticValue, return obj unchanged."""
+        defn = MockOutputLayerDefinition(sink=42)
+        result = _resolve_output_layer_definition(defn)
+        assert result is defn
+
+    def test_int_passes_through(self):
+        assert _resolve_output_layer_definition(42) == 42

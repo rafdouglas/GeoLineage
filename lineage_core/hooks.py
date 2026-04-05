@@ -71,6 +71,26 @@ def _is_gpkg_path(path: str | None) -> bool:
     return path.lower().endswith(".gpkg")
 
 
+def _resolve_output_layer_definition(obj: Any) -> Any:
+    """Unwrap QgsProcessingOutputLayerDefinition to a plain string path.
+
+    If obj has a .sink attribute with a .staticValue() method, call it to
+    extract the underlying string path. If .sink is itself a string, return
+    it directly. Otherwise return obj unchanged.
+    """
+    if not hasattr(obj, "sink"):
+        return obj
+    sink = obj.sink
+    if isinstance(sink, str):
+        logger.debug("Resolved OutputLayerDefinition with string sink: %s", sink)
+        return sink
+    if hasattr(sink, "staticValue") and callable(sink.staticValue):
+        value = sink.staticValue()
+        logger.debug("Resolved OutputLayerDefinition via staticValue: %s", value)
+        return value
+    return obj
+
+
 def _extract_input_layer_ids(params: dict) -> list[str]:
     """Extract layer IDs from processing parameters.
 
@@ -159,6 +179,7 @@ def _get_output_layer_info(result: dict, params: dict) -> tuple[str | None, str 
     Returns (layer_id, gpkg_path, layer_name).
     """
     output = result.get("OUTPUT")
+    output = _resolve_output_layer_definition(output)
     if output is None:
         return None, None, None
 
@@ -180,6 +201,7 @@ def _get_output_layer_info(result: dict, params: dict) -> tuple[str | None, str 
     # Check explicit output parameter for gpkg path
     if gpkg_path is None:
         output_param = params.get("OUTPUT", "")
+        output_param = _resolve_output_layer_definition(output_param)
         if isinstance(output_param, str) and _is_gpkg_path(output_param):
             gpkg_path = output_param
 
@@ -215,6 +237,7 @@ def _record_processing_lineage(
             continue
         items = value if isinstance(value, list) else [value]
         for item in items:
+            item = _resolve_output_layer_definition(item)
             source_path = _get_layer_source_path(item)
             if source_path and source_path not in parents:
                 parents.append(source_path)
