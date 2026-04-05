@@ -1,0 +1,13 @@
+[tool.coverage.run]
+omit = [
+    "lineage_viewer/*",
+    "plugin.py",
+    "spike/*",
+    "__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]

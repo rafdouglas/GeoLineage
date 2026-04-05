@@ -3,8 +3,8 @@
 import json
 import sqlite3
 
-from lineage_core.repair_lineage import repair_lineage
-from lineage_core.settings import LINEAGE_TABLE
+from GeoLineage.lineage_core.repair_lineage import repair_lineage
+from GeoLineage.lineage_core.settings import LINEAGE_TABLE
 
 # ---------------------------------------------------------------------------
 # Helpers
