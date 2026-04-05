@@ -42,7 +42,7 @@ class GeoLineagePlugin:
         icon_path = os.path.join(os.path.dirname(__file__), "resources")
         self.toggle_action = QAction(
             QIcon(os.path.join(icon_path, "icon_off.png")),
-            "Toggle GeoLineage Recording",
+            "GeoLineage is currently not recording. Click to start recording.",
             self.iface.mainWindow(),
         )
         self.toggle_action.setCheckable(True)
@@ -213,10 +213,18 @@ class GeoLineagePlugin:
         self.dock_widget.show()
 
     def _update_icon(self, enabled: bool) -> None:
-        """Update toggle action icon based on state."""
+        """Update toggle action icon and tooltip based on state."""
         from qgis.PyQt.QtGui import QIcon
 
         icon_path = os.path.join(os.path.dirname(__file__), "resources")
         icon_file = "icon_on.png" if enabled else "icon_off.png"
         if self.toggle_action:
             self.toggle_action.setIcon(QIcon(os.path.join(icon_path, icon_file)))
+            if enabled:
+                self.toggle_action.setToolTip(
+                    "GeoLineage is currently recording. Click to pause."
+                )
+            else:
+                self.toggle_action.setToolTip(
+                    "GeoLineage is currently not recording. Click to start recording."
+                )

@@ -130,7 +130,7 @@ class DetailPanel(_get_base_class()):
                         entry_layout.addWidget(btn)
 
             # Parameters
-            raw_params = entry.get("parameters", "")
+            raw_params = entry.get("operation_params", "")
             if raw_params:
                 try:
                     params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params

@@ -18,6 +18,7 @@ from GeoLineage.lineage_core.hooks import (
     _local,
     _resolve_output_layer_definition,
     _sanitize_params,
+    _strip_layername,
 )
 
 # --- Re-entrancy guard tests ---
@@ -444,3 +445,125 @@ class TestResolveOutputLayerDefinition:
 
     def test_int_passes_through(self):
         assert _resolve_output_layer_definition(42) == 42
+
+
+# --- _strip_layername tests ---
+
+
+class TestStripLayername:
+    def test_plain_path(self):
+        assert _strip_layername("/data/output.gpkg") == "/data/output.gpkg"
+
+    def test_path_with_layername_suffix(self):
+        assert _strip_layername("/data/output.gpkg|layername=points") == "/data/output.gpkg"
+
+    def test_path_with_multiple_pipes(self):
+        assert _strip_layername("/data/output.gpkg|layername=pts|subset=id>0") == "/data/output.gpkg"
+
+    def test_empty_string(self):
+        assert _strip_layername("") == ""
+
+
+# --- _is_gpkg_path with |layername= suffix tests ---
+
+
+class TestIsGpkgPathWithSuffix:
+    def test_gpkg_with_layername_suffix(self):
+        assert _is_gpkg_path("/data/output.gpkg|layername=points") is True
+
+    def test_gpkg_with_multiple_pipe_params(self):
+        assert _is_gpkg_path("/data/output.gpkg|layername=pts|subset=id>0") is True
+
+    def test_non_gpkg_with_layername_suffix(self):
+        assert _is_gpkg_path("/data/output.shp|layername=points") is False
+
+
+# --- Nested params unwrapping tests ---
+
+
+class TestNestedParamsUnwrapping:
+    """Tests for the dialog hook's nested 'inputs' dict unwrapping in _record_processing_lineage."""
+
+    def test_unwraps_nested_inputs_for_parent_extraction(self, tmp_path, monkeypatch):
+        """Nested params from dialog hook produce correct parents list."""
+        from GeoLineage.lineage_core import hooks, recorder, checksum
+
+        # Create a real .gpkg file so _get_layer_source_path resolves it
+        input_gpkg = tmp_path / "input.gpkg"
+        input_gpkg.write_bytes(b"dummy")
+        output_gpkg = tmp_path / "output.gpkg"
+        output_gpkg.write_bytes(b"dummy")
+
+        captured = {}
+
+        def fake_record_processing(**kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr(recorder, "record_processing", fake_record_processing)
+        monkeypatch.setattr(checksum, "compute_checksum", lambda path: "fake")
+
+        # Dialog-style nested params: algorithm inputs are under "inputs" key
+        params = {
+            "inputs": {
+                "INPUT": str(input_gpkg),
+                "DISTANCE": 10,
+            },
+            "area_units": "m2",
+        }
+        result = {"OUTPUT": str(output_gpkg)}
+
+        hooks._record_processing_lineage("native:buffer", params, result)
+
+        assert "parents" in captured
+        assert str(input_gpkg) in captured["parents"]
+
+    def test_flat_params_still_work(self, tmp_path, monkeypatch):
+        """Flat params from processing.run() hook still produce correct parents."""
+        from GeoLineage.lineage_core import hooks, recorder, checksum
+
+        input_gpkg = tmp_path / "input.gpkg"
+        input_gpkg.write_bytes(b"dummy")
+        output_gpkg = tmp_path / "output.gpkg"
+        output_gpkg.write_bytes(b"dummy")
+
+        captured = {}
+
+        def fake_record_processing(**kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr(recorder, "record_processing", fake_record_processing)
+        monkeypatch.setattr(checksum, "compute_checksum", lambda path: "fake")
+
+        # Flat params (from processing.run hook) — no "inputs" nesting
+        params = {
+            "INPUT": str(input_gpkg),
+            "DISTANCE": 10,
+        }
+        result = {"OUTPUT": str(output_gpkg)}
+
+        hooks._record_processing_lineage("native:buffer", params, result)
+
+        assert "parents" in captured
+        assert str(input_gpkg) in captured["parents"]
+
+    def test_no_inputs_key_passes_through(self, tmp_path, monkeypatch):
+        """Params without 'inputs' key work without error."""
+        from GeoLineage.lineage_core import hooks, recorder, checksum
+
+        output_gpkg = tmp_path / "output.gpkg"
+        output_gpkg.write_bytes(b"dummy")
+
+        captured = {}
+
+        def fake_record_processing(**kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr(recorder, "record_processing", fake_record_processing)
+        monkeypatch.setattr(checksum, "compute_checksum", lambda path: "fake")
+
+        params = {"DISTANCE": 10}
+        result = {"OUTPUT": str(output_gpkg)}
+
+        hooks._record_processing_lineage("native:buffer", params, result)
+
+        assert captured.get("parents") == []

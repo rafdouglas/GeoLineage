@@ -64,11 +64,16 @@ def _decrement_depth() -> int:
     return depth
 
 
+def _strip_layername(path: str) -> str:
+    """Strip |layername=... suffix from a QGIS data source URI."""
+    return path.split("|")[0]
+
+
 def _is_gpkg_path(path: str | None) -> bool:
     """Check if a path refers to a GeoPackage file."""
     if not path or not isinstance(path, str):
         return False
-    return path.lower().endswith(".gpkg")
+    return _strip_layername(path).lower().endswith(".gpkg")
 
 
 def _resolve_output_layer_definition(obj: Any) -> Any:
@@ -195,15 +200,15 @@ def _get_output_layer_info(result: dict, params: dict) -> tuple[str | None, str 
         if source_path and _is_gpkg_path(source_path):
             gpkg_path = source_path
     elif isinstance(output, str) and _is_gpkg_path(output):
-        gpkg_path = output
-        layer_name = os.path.splitext(os.path.basename(output))[0]
+        gpkg_path = _strip_layername(output)
+        layer_name = os.path.splitext(os.path.basename(gpkg_path))[0]
 
     # Check explicit output parameter for gpkg path
     if gpkg_path is None:
         output_param = params.get("OUTPUT", "")
         output_param = _resolve_output_layer_definition(output_param)
         if isinstance(output_param, str) and _is_gpkg_path(output_param):
-            gpkg_path = output_param
+            gpkg_path = _strip_layername(output_param)
 
     return layer_id, gpkg_path, layer_name
 
@@ -220,8 +225,23 @@ def _record_processing_lineage(
     from .checksum import compute_checksum
     from .recorder import record_processing
 
+    # Dialog hook passes params with algorithm inputs nested under "inputs" key.
+    # Unwrap so that INPUT, OVERLAY, etc. are at the top level.
+    inner = params.get("inputs")
+    if isinstance(inner, dict):
+        params = {**params, **inner}
+
     input_layer_ids = _extract_input_layer_ids(params)
     layer_id, gpkg_path, layer_name = _get_output_layer_info(result, params)
+
+    logger.info(
+        "Lineage hook fired: algorithm=%s, gpkg_path=%s, layer_id=%s, result_OUTPUT=%r, params_OUTPUT=%r",
+        algorithm_name,
+        gpkg_path,
+        layer_id,
+        result.get("OUTPUT"),
+        params.get("OUTPUT"),
+    )
 
     if layer_name is None:
         layer_name = "unknown"
@@ -289,6 +309,13 @@ def _record_processing_lineage(
         _memory_buffer.add(layer_id, entry)
         _memory_buffer.link(layer_id, input_layer_ids)
         logger.debug("Buffered processing lineage for layer %s", layer_id)
+    else:
+        logger.warning(
+            "Lineage NOT recorded: gpkg_path=%s, layer_id=%s for algorithm=%s",
+            gpkg_path,
+            layer_id,
+            algorithm_name,
+        )
 
 
 def _sanitize_params(params: dict) -> dict:
@@ -321,7 +348,8 @@ def _sanitize_params(params: dict) -> dict:
 def install_hooks() -> None:
     """Install all lineage recording hooks.
 
-    - Monkey-patches processing.run()
+    - Monkey-patches processing.run() (Python API calls)
+    - Monkey-patches AlgorithmDialog.finish() (GUI toolbox runs)
     - Monkey-patches QgsVectorFileWriter.writeAsVectorFormatV3()
     - Connects layersAdded signal for edit tracking
 
@@ -332,6 +360,7 @@ def install_hooks() -> None:
         return
 
     _install_processing_hook()
+    _install_dialog_hook()
     _install_filewriter_hook()
     _install_edit_signals()
     _hook_state["installed"] = True
@@ -352,6 +381,7 @@ def uninstall_hooks() -> None:
         return
 
     _uninstall_processing_hook()
+    _uninstall_dialog_hook()
     _uninstall_filewriter_hook()
     _uninstall_edit_signals()
     _hook_state["installed"] = False
@@ -420,6 +450,69 @@ def _uninstall_processing_hook() -> None:
 
     _hook_state["processing_original"] = None
     _hook_state["processing_wrapper"] = None
+
+
+def _install_dialog_hook() -> None:
+    """Monkey-patch AlgorithmDialog.finish() for GUI-initiated algorithm runs.
+
+    The QGIS Processing toolbox dialog does NOT call processing.run().
+    Instead it calls AlgorithmExecutor.execute() or QgsProcessingAlgRunnerTask
+    directly, both of which converge in AlgorithmDialog.finish().
+    """
+    try:
+        from processing.gui.AlgorithmDialog import AlgorithmDialog
+    except ImportError:
+        logger.warning("AlgorithmDialog not available — skipping dialog hook")
+        return
+
+    original_finish = AlgorithmDialog.finish
+    _hook_state["dialog_original_finish"] = original_finish
+
+    def _wrapped_finish(dialog_self, successful, result, context, feedback, in_place=False):
+        original_finish(dialog_self, successful, result, context, feedback, in_place)
+
+        try:
+            if not successful or in_place or not isinstance(result, dict):
+                return
+            if "OUTPUT" not in result:
+                return
+
+            algorithm_name = dialog_self.algorithm().id()
+            # Recover input parameters from the history details stored during runAlgorithm()
+            params = getattr(dialog_self, "history_details", {}).get("parameters", {})
+
+            logger.info("Dialog hook fired: algorithm=%s, result_OUTPUT=%r", algorithm_name, result.get("OUTPUT"))
+            _record_processing_lineage(algorithm_name, params, result)
+        except Exception:
+            logger.exception("Dialog lineage recording failed; operation unaffected")
+
+    AlgorithmDialog.finish = _wrapped_finish
+    _hook_state["dialog_wrapper_finish"] = _wrapped_finish
+    logger.debug("AlgorithmDialog.finish() monkey-patched")
+
+
+def _uninstall_dialog_hook() -> None:
+    """Restore original AlgorithmDialog.finish() with identity check."""
+    original = _hook_state.get("dialog_original_finish")
+    wrapper = _hook_state.get("dialog_wrapper_finish")
+    if original is None:
+        return
+
+    try:
+        from processing.gui.AlgorithmDialog import AlgorithmDialog
+    except ImportError:
+        return
+
+    if AlgorithmDialog.finish is wrapper:
+        AlgorithmDialog.finish = original
+        logger.debug("AlgorithmDialog.finish() restored")
+    else:
+        logger.warning(
+            "AlgorithmDialog.finish() identity mismatch — skipping restoration"
+        )
+
+    _hook_state["dialog_original_finish"] = None
+    _hook_state["dialog_wrapper_finish"] = None
 
 
 def _install_filewriter_hook() -> None:
@@ -506,6 +599,7 @@ def _record_export_lineage(args: tuple, kwargs: dict, result: Any) -> None:
     if not output_path or not _is_gpkg_path(output_path):
         return
 
+    output_path = _strip_layername(output_path)
     layer_name = source_layer.name() if hasattr(source_layer, "name") else "unknown"
 
     # Compute parent checksums
