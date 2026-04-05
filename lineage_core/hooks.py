@@ -507,9 +507,7 @@ def _uninstall_dialog_hook() -> None:
         AlgorithmDialog.finish = original
         logger.debug("AlgorithmDialog.finish() restored")
     else:
-        logger.warning(
-            "AlgorithmDialog.finish() identity mismatch — skipping restoration"
-        )
+        logger.warning("AlgorithmDialog.finish() identity mismatch — skipping restoration")
 
     _hook_state["dialog_original_finish"] = None
     _hook_state["dialog_wrapper_finish"] = None
