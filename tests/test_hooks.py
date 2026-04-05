@@ -486,7 +486,7 @@ class TestNestedParamsUnwrapping:
 
     def test_unwraps_nested_inputs_for_parent_extraction(self, tmp_path, monkeypatch):
         """Nested params from dialog hook produce correct parents list."""
-        from GeoLineage.lineage_core import hooks, recorder, checksum
+        from GeoLineage.lineage_core import checksum, hooks, recorder
 
         # Create a real .gpkg file so _get_layer_source_path resolves it
         input_gpkg = tmp_path / "input.gpkg"
@@ -519,7 +519,7 @@ class TestNestedParamsUnwrapping:
 
     def test_flat_params_still_work(self, tmp_path, monkeypatch):
         """Flat params from processing.run() hook still produce correct parents."""
-        from GeoLineage.lineage_core import hooks, recorder, checksum
+        from GeoLineage.lineage_core import checksum, hooks, recorder
 
         input_gpkg = tmp_path / "input.gpkg"
         input_gpkg.write_bytes(b"dummy")
@@ -548,7 +548,7 @@ class TestNestedParamsUnwrapping:
 
     def test_no_inputs_key_passes_through(self, tmp_path, monkeypatch):
         """Params without 'inputs' key work without error."""
-        from GeoLineage.lineage_core import hooks, recorder, checksum
+        from GeoLineage.lineage_core import checksum, hooks, recorder
 
         output_gpkg = tmp_path / "output.gpkg"
         output_gpkg.write_bytes(b"dummy")
