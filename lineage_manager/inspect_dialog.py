@@ -26,28 +26,22 @@ class InspectDialog(_get_base_class()):
     Inherits from QDialog at runtime.
     """
 
-    # Column indices
-    _COL_ID = 0
-    _COL_LAYER = 1
-    _COL_TYPE = 2
-    _COL_TOOL = 3
-    _COL_SUMMARY = 4
-    _COL_EDIT_SUMMARY = 5
-    _COL_TIME = 6
-    _COL_PARENTS = 7
-    _EDITABLE_COLS = {4: "operation_summary", 5: "edit_summary"}
+    # Column registry — single source of truth
+    _COLUMNS = ["File", "ID", "Layer", "Type", "Tool", "User", "Summary", "Edit Summary", "Time", "Params", "Parents"]
+    (_COL_FILE, _COL_ID, _COL_LAYER, _COL_TYPE, _COL_TOOL, _COL_USER,
+     _COL_SUMMARY, _COL_EDIT_SUMMARY, _COL_TIME, _COL_PARAMS, _COL_PARENTS) = range(len(_COLUMNS))
+    _EDITABLE_COLS = {_COL_SUMMARY: "operation_summary", _COL_EDIT_SUMMARY: "edit_summary"}
 
-    def __init__(self, gpkg_path: str, project_dir: str, dock_widget=None, parent=None) -> None:
+    def __init__(self, project_dir: str, dock_widget=None, parent=None) -> None:
         from qgis.PyQt.QtCore import Qt
         from qgis.PyQt.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout
 
         super().__init__(parent)
-        self._gpkg_path = gpkg_path
         self._project_dir = project_dir
         self._dock_widget = dock_widget
         self._updating = False
 
-        self.setWindowTitle(f"Inspect Lineage: {os.path.basename(gpkg_path)}")
+        self.setWindowTitle(f"Inspect Lineage: {os.path.basename(self._project_dir)}")
         self.setMinimumSize(800, 400)
         self.setAttribute(Qt.WA_DeleteOnClose)
 
@@ -89,20 +83,24 @@ class InspectDialog(_get_base_class()):
         self._load_entries()
 
     def _build_table(self, parent_layout) -> None:
+        from qgis.PyQt.QtCore import Qt
         from qgis.PyQt.QtWidgets import QAbstractItemView, QHeaderView, QTableWidget
 
-        headers = ["ID", "Layer", "Type", "Tool", "Summary", "Edit Summary", "Time", "Parents"]
-        self._table = QTableWidget(0, len(headers))
-        self._table.setHorizontalHeaderLabels(headers)
+        self._table = QTableWidget(0, len(self._COLUMNS))
+        self._table.setHorizontalHeaderLabels(self._COLUMNS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSortingEnabled(True)
         self._table.cellChanged.connect(self._on_cell_changed)
+        self._table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_context_menu)
         parent_layout.addWidget(self._table)
 
     def _load_entries(self) -> None:
+        import pathlib
+
         from qgis.PyQt.QtCore import Qt
         from qgis.PyQt.QtWidgets import QTableWidgetItem
 
@@ -111,18 +109,35 @@ class InspectDialog(_get_base_class()):
         self._updating = True
         self._table.setRowCount(0)
 
-        entries = read_all_entries(self._gpkg_path)
-        self._table.setRowCount(len(entries))
+        gpkg_files = sorted(pathlib.Path(self._project_dir).glob("*.gpkg"))
 
-        for row, entry in enumerate(entries):
+        all_rows: list[tuple[str, dict]] = []
+        for gpkg_file in gpkg_files:
+            try:
+                entries = read_all_entries(str(gpkg_file))
+                for entry in entries:
+                    all_rows.append((str(gpkg_file), entry))
+            except Exception:
+                logger.exception("Failed to read entries from %s", gpkg_file)
+
+        self._table.setRowCount(len(all_rows))
+
+        for row, (gpkg_path, entry) in enumerate(all_rows):
+            file_item = QTableWidgetItem(pathlib.Path(gpkg_path).name)
+            file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
+            file_item.setData(Qt.UserRole, gpkg_path)
+            self._table.setItem(row, self._COL_FILE, file_item)
+
             items = [
                 (self._COL_ID, str(entry.get("id", ""))),
                 (self._COL_LAYER, entry.get("layer_name", "")),
                 (self._COL_TYPE, entry.get("entry_type", "")),
                 (self._COL_TOOL, entry.get("operation_tool", "") or ""),
+                (self._COL_USER, entry.get("created_by", "") or ""),
                 (self._COL_SUMMARY, entry.get("operation_summary", "")),
                 (self._COL_EDIT_SUMMARY, entry.get("edit_summary", "") or ""),
                 (self._COL_TIME, entry.get("created_at", "")),
+                (self._COL_PARAMS, entry.get("operation_params", "") or ""),
                 (self._COL_PARENTS, entry.get("parent_files", "") or ""),
             ]
             for col, text in items:
@@ -132,6 +147,15 @@ class InspectDialog(_get_base_class()):
                 self._table.setItem(row, col, item)
 
         self._updating = False
+
+    def _get_row_gpkg_path(self, row: int) -> str | None:
+        """Extract gpkg_path from the File column's UserRole data."""
+        from qgis.PyQt.QtCore import Qt
+
+        file_item = self._table.item(row, self._COL_FILE)
+        if file_item is None:
+            return None
+        return file_item.data(Qt.UserRole)
 
     def _on_cell_changed(self, row: int, col: int) -> None:
         if self._updating:
@@ -145,10 +169,13 @@ class InspectDialog(_get_base_class()):
         id_item = self._table.item(row, self._COL_ID)
         if id_item is None:
             return
+        gpkg_path = self._get_row_gpkg_path(row)
+        if gpkg_path is None:
+            return
         entry_id = int(id_item.text())
         new_value = self._table.item(row, col).text()
         try:
-            update_entry_field(self._gpkg_path, entry_id, field, new_value)
+            update_entry_field(gpkg_path, entry_id, field, new_value)
         except Exception:
             logger.exception("Failed to update field %s for entry %d", field, entry_id)
 
@@ -163,6 +190,9 @@ class InspectDialog(_get_base_class()):
         id_item = self._table.item(row, self._COL_ID)
         if id_item is None:
             return
+        gpkg_path = self._get_row_gpkg_path(row)
+        if gpkg_path is None:
+            return
         entry_id = int(id_item.text())
 
         reply = QMessageBox.question(
@@ -175,7 +205,7 @@ class InspectDialog(_get_base_class()):
         if reply != QMessageBox.Yes:
             return
 
-        delete_entry(self._gpkg_path, entry_id)
+        delete_entry(gpkg_path, entry_id)
         self._load_entries()
 
     def _on_cleanup(self) -> None:
@@ -188,11 +218,38 @@ class InspectDialog(_get_base_class()):
     def _on_relink(self) -> None:
         from .relink_dialog import RelinkDialog
 
-        dlg = RelinkDialog(self._gpkg_path, self._project_dir, self)
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        gpkg_path = self._get_row_gpkg_path(row)
+        if gpkg_path is None:
+            return
+        dlg = RelinkDialog(gpkg_path, self._project_dir, self)
         dlg.exec_()
         self._load_entries()
 
     def _on_view_in_graph(self) -> None:
+        if self._dock_widget is None:
+            return
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        gpkg_path = self._get_row_gpkg_path(row)
+        if gpkg_path is None:
+            return
+        self._dock_widget.show_lineage(gpkg_path, self._project_dir)
+        self.close()
+
+    def _on_context_menu(self, pos) -> None:
+        from qgis.PyQt.QtWidgets import QMenu
+
+        row = self._table.rowAt(pos.y())
+        if row < 0:
+            return
+        self._table.selectRow(row)
+        menu = QMenu(self)
+        menu.addAction("Delete", self._on_delete)
+        menu.addAction("Relink...", self._on_relink)
         if self._dock_widget is not None:
-            self._dock_widget.show_lineage(self._gpkg_path, self._project_dir)
-            self.close()
+            menu.addAction("View in Graph", self._on_view_in_graph)
+        menu.exec_(self._table.viewport().mapToGlobal(pos))

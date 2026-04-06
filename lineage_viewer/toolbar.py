@@ -57,27 +57,27 @@ class ViewerToolbar(_get_base_class()):
 
         self.addSeparator()
 
+        # Export actions (before search to ensure visibility)
+        self._export_png_action = QAction("Export PNG", self)
+        self._export_png_action.triggered.connect(lambda: self._emit_export("png"))
+        self.addAction(self._export_png_action)
+
+        self._export_svg_action = QAction("Export SVG", self)
+        self._export_svg_action.triggered.connect(lambda: self._emit_export("svg"))
+        self.addAction(self._export_svg_action)
+
+        self._export_dot_action = QAction("Export DOT", self)
+        self._export_dot_action.triggered.connect(lambda: self._emit_export("dot"))
+        self.addAction(self._export_dot_action)
+
+        self.addSeparator()
+
         # Search
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("Search by filename...")
         self._search_input.setMaximumWidth(200)
         self._search_input.textChanged.connect(self._on_search_text_changed)
         self.addWidget(self._search_input)
-
-        self.addSeparator()
-
-        # Export actions
-        self._export_dot_action = QAction("Export DOT", self)
-        self._export_dot_action.triggered.connect(lambda: self._emit_export("dot"))
-        self.addAction(self._export_dot_action)
-
-        self._export_svg_action = QAction("Export SVG", self)
-        self._export_svg_action.triggered.connect(lambda: self._emit_export("svg"))
-        self.addAction(self._export_svg_action)
-
-        self._export_png_action = QAction("Export PNG", self)
-        self._export_png_action.triggered.connect(lambda: self._emit_export("png"))
-        self.addAction(self._export_png_action)
 
     def set_callbacks(
         self,

@@ -15,7 +15,7 @@ import threading
 from typing import Any
 
 from .memory_buffer import MemoryBuffer
-from .settings import LOGGER_NAME
+from .settings import LOGGER_NAME, SETTING_USERNAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.hooks")
 
@@ -38,6 +38,17 @@ _hook_state: dict[str, Any] = {
 # Per-layer edit snapshots: captured in beforeCommitChanges (before buffer is cleared),
 # consumed in afterCommitChanges (after commit succeeds).
 _pending_edit_snapshots: dict[str, dict[str, int]] = {}
+
+
+def _get_created_by() -> str | None:
+    """Return username from settings if non-empty, else None."""
+    try:
+        from qgis.core import QgsSettings
+
+        value = QgsSettings().value(SETTING_USERNAME, "", str)
+        return value if value else None
+    except ImportError:
+        return None
 
 
 def get_memory_buffer() -> MemoryBuffer:
@@ -282,7 +293,7 @@ def _record_processing_lineage(
         "parent_metadata": parent_metadata,
         "parent_checksums": parent_checksums,
         "output_crs_epsg": output_crs_epsg,
-        "created_by": None,
+        "created_by": _get_created_by(),
     }
 
     if gpkg_path:
@@ -296,6 +307,7 @@ def _record_processing_lineage(
             parent_metadata=parent_metadata,
             parent_checksums=parent_checksums,
             output_crs_epsg=output_crs_epsg,
+            created_by=_get_created_by(),
         )
         # Also flush any buffered chain for input layers
         if layer_id:
@@ -622,6 +634,7 @@ def _record_export_lineage(args: tuple, kwargs: dict, result: Any) -> None:
         parent_metadata=[],
         parent_checksums=parent_checksums,
         output_crs_epsg=output_crs_epsg,
+        created_by=_get_created_by(),
     )
     logger.debug("Recorded export lineage: %s -> %s", source_path, output_path)
 
@@ -742,6 +755,7 @@ def _record_edit_lineage(layer: Any, gpkg_path: str, edit_summary: dict) -> None
         gpkg_path=gpkg_path,
         layer_name=layer_name,
         edit_summary=edit_summary,
+        created_by=_get_created_by(),
     )
     logger.debug("Recorded edit lineage for %s in %s", layer_name, gpkg_path)
 

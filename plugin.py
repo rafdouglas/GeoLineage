@@ -241,24 +241,17 @@ class GeoLineagePlugin:
         self.dock_widget.show()
 
     def _show_manage_dialog(self) -> None:
-        """Open InspectDialog for the active layer's GeoPackage."""
+        """Open InspectDialog for all GeoPackages in the project directory."""
         from qgis.core import QgsProject
 
         from .lineage_manager.inspect_dialog import InspectDialog
-        from .lineage_retrieval.path_resolver import extract_gpkg_path
 
-        layer = self.iface.activeLayer()
-        if layer is None:
-            self.iface.messageBar().pushWarning("GeoLineage", "No active layer selected.")
+        project_dir = QgsProject.instance().homePath()
+        if not project_dir:
+            self.iface.messageBar().pushWarning("GeoLineage", "Save the project first.")
             return
 
-        gpkg_path = extract_gpkg_path(layer.source())
-        if gpkg_path is None:
-            self.iface.messageBar().pushWarning("GeoLineage", "Active layer is not backed by a GeoPackage file.")
-            return
-
-        project_dir = QgsProject.instance().homePath() or os.path.dirname(gpkg_path)
-        dlg = InspectDialog(gpkg_path, project_dir, dock_widget=self.dock_widget, parent=self.iface.mainWindow())
+        dlg = InspectDialog(project_dir, dock_widget=self.dock_widget, parent=self.iface.mainWindow())
         dlg.exec_()
 
     def _show_settings_dialog(self) -> None:

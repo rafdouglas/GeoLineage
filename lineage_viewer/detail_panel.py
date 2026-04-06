@@ -107,6 +107,11 @@ class DetailPanel(_get_base_class()):
             if op_tool:
                 entry_layout.addWidget(QLabel(f"Tool: {op_tool}"))
 
+            # Created by
+            created_by = entry.get("created_by", "")
+            if created_by:
+                entry_layout.addWidget(QLabel(f"User: {created_by}"))
+
             # Timestamp
             created_at = entry.get("created_at", "")
             if created_at:
@@ -129,20 +134,39 @@ class DetailPanel(_get_base_class()):
                         btn.clicked.connect(lambda checked, p=parent_path: self._handle_parent_click(p))
                         entry_layout.addWidget(btn)
 
-            # Parameters
+            # Parameters (collapsible)
             raw_params = entry.get("operation_params", "")
             if raw_params:
+                from qgis.PyQt.QtCore import Qt
+
                 try:
                     params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
                     params_text = json.dumps(params, indent=2)
                 except (json.JSONDecodeError, TypeError):
                     params_text = str(raw_params)
-                params_label = QLabel(f"Parameters:\n{params_text}")
+
+                toggle_btn = QPushButton("Show Parameters")
+                toggle_btn.setFlat(True)
+                toggle_btn.setStyleSheet("text-align: left; color: #1565C0; font-size: 10px;")
+                entry_layout.addWidget(toggle_btn)
+
+                params_label = QLabel(params_text)
                 params_label.setWordWrap(True)
+                params_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
                 params_label.setStyleSheet(
                     "font-size: 10px; font-family: monospace; background: #f5f5f5; padding: 4px;"
                 )
+                params_label.setVisible(False)
                 entry_layout.addWidget(params_label)
+
+                def _make_toggle(btn, lbl):
+                    def _toggle():
+                        visible = not lbl.isVisible()
+                        lbl.setVisible(visible)
+                        btn.setText("Hide Parameters" if visible else "Show Parameters")
+                    return _toggle
+
+                toggle_btn.clicked.connect(_make_toggle(toggle_btn, params_label))
 
             self._scroll_layout.addWidget(frame)
 
