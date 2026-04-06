@@ -26,7 +26,7 @@ for f in __init__.py plugin.py metadata.txt LICENSE README.md; do
 done
 
 # Sync directories (--delete removes files inside the dir that no longer exist in source)
-for d in resources lineage_core lineage_retrieval lineage_viewer; do
+for d in resources lineage_core lineage_retrieval lineage_viewer lineage_manager; do
     if [[ -d "${REPO_DIR}/${d}" ]]; then
         rsync "${RSYNC_OPTS[@]}" --delete "${REPO_DIR}/${d}/" "${PLUGIN_DIR}/${d}/"
     fi

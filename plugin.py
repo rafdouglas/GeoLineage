@@ -26,6 +26,8 @@ class GeoLineagePlugin:
         self._enabled = False
         self.dock_widget = None
         self.show_lineage_action = None
+        self.manage_action = None
+        self.settings_action = None
         self.layer_context_menu_action = None
 
     def initGui(self) -> None:
@@ -60,6 +62,22 @@ class GeoLineagePlugin:
         )
         self.show_lineage_action.triggered.connect(self._show_lineage_for_active_layer)
         self.iface.addPluginToMenu("&GeoLineage", self.show_lineage_action)
+
+        # Manage Lineage action
+        self.manage_action = QAction(
+            "Manage Lineage...",
+            self.iface.mainWindow(),
+        )
+        self.manage_action.triggered.connect(self._show_manage_dialog)
+        self.iface.addPluginToMenu("&GeoLineage", self.manage_action)
+
+        # Settings action
+        self.settings_action = QAction(
+            "Settings",
+            self.iface.mainWindow(),
+        )
+        self.settings_action.triggered.connect(self._show_settings_dialog)
+        self.iface.addPluginToMenu("&GeoLineage", self.settings_action)
 
         # Layer tree context menu entry
         from qgis.core import QgsMapLayer
@@ -99,6 +117,16 @@ class GeoLineagePlugin:
         if self.show_lineage_action:
             self.iface.removePluginMenu("&GeoLineage", self.show_lineage_action)
             self.show_lineage_action = None
+
+        # Remove manage action
+        if self.manage_action:
+            self.iface.removePluginMenu("&GeoLineage", self.manage_action)
+            self.manage_action = None
+
+        # Remove settings action
+        if self.settings_action:
+            self.iface.removePluginMenu("&GeoLineage", self.settings_action)
+            self.settings_action = None
 
         # Remove layer context menu action
         if self.layer_context_menu_action:
@@ -211,6 +239,34 @@ class GeoLineagePlugin:
         project_dir = QgsProject.instance().homePath() or os.path.dirname(gpkg_path)
         self.dock_widget.show_lineage(gpkg_path, project_dir)
         self.dock_widget.show()
+
+    def _show_manage_dialog(self) -> None:
+        """Open InspectDialog for the active layer's GeoPackage."""
+        from qgis.core import QgsProject
+
+        from .lineage_manager.inspect_dialog import InspectDialog
+        from .lineage_retrieval.path_resolver import extract_gpkg_path
+
+        layer = self.iface.activeLayer()
+        if layer is None:
+            self.iface.messageBar().pushWarning("GeoLineage", "No active layer selected.")
+            return
+
+        gpkg_path = extract_gpkg_path(layer.source())
+        if gpkg_path is None:
+            self.iface.messageBar().pushWarning("GeoLineage", "Active layer is not backed by a GeoPackage file.")
+            return
+
+        project_dir = QgsProject.instance().homePath() or os.path.dirname(gpkg_path)
+        dlg = InspectDialog(gpkg_path, project_dir, dock_widget=self.dock_widget, parent=self.iface.mainWindow())
+        dlg.exec_()
+
+    def _show_settings_dialog(self) -> None:
+        """Open SettingsDialog."""
+        from .lineage_manager.settings_dialog import SettingsDialog
+
+        dlg = SettingsDialog(parent=self.iface.mainWindow())
+        dlg.exec_()
 
     def _update_icon(self, enabled: bool) -> None:
         """Update toggle action icon and tooltip based on state."""
