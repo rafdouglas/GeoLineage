@@ -2,7 +2,7 @@
 name=GeoLineage
 qgisMinimumVersion=3.34
 description=Track data lineage in GeoPackage files — records processing, edits, and exports automatically.
-version=0.5.3
+version=0.5.4
 author=RafDouglas C. Tommasi
 email=rafdouglas@exponential.engineering
 about=GeoLineage embeds lineage metadata directly inside GeoPackage files. Every processing step, manual edit, and file export is recorded in a _lineage table, creating a permanent chain of custody for geospatial data. The plugin intercepts QGIS processing operations, tracks manual edits, and detects exports — all without modifying existing data.
@@ -10,7 +10,8 @@ tracker=https://github.com/rafdouglas/GeoLineage/issues
 repository=https://github.com/rafdouglas/GeoLineage
 tags=geopackage,lineage,provenance,metadata,tracking
 homepage=https://github.com/rafdouglas/GeoLineage
-changelog=0.5.3 - Add bandit CI security scan, ruff/bandit README badges, nosec annotations
+changelog=0.5.4 - Update plugin branding with professional assets (logo, cover image, icons)
+    0.5.3 - Add bandit CI security scan, ruff/bandit README badges, nosec annotations
     0.5.2 - Fix release packaging: include lineage_manager module in plugin ZIP
     0.5.1 - UI enhancements: multi-GeoPackage inspect dialog, created_by recording, collapsible params, search highlight, context menu, column registry refactor
     0.4.0 - Lineage manager: inspect/edit/delete entries, cleanup tables, relink broken paths, settings dialog, plugin menu integration
@@ -18,8 +19,8 @@ changelog=0.5.3 - Add bandit CI security scan, ruff/bandit README badges, nosec 
     0.2.0 - Lineage graph viewer: interactive dock widget with Sugiyama layout, DOT/SVG/PNG export, search/highlight, detail panel
     0.1.0 - Initial release: core lineage recording, hooks, graph builder
 category=Database
-icon=assets/GeoLineage_logo.png
-preview=assets/GeoLineage_cover_image.jpg
+icon=resources/GeoLineage_logo.png
+preview=resources/GeoLineage_cover_image.jpg
 experimental=True
 deprecated=False
 hasProcessingProvider=no
