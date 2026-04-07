@@ -6,7 +6,7 @@
 
 A QGIS plugin that tracks data lineage in GeoPackage files. Every processing step, manual edit, and export is recorded directly inside the `.gpkg` file, creating a permanent chain of custody for your geospatial data.
 
-![](/assets/GeoLineage_cover_image.png)
+![ ](/assets/GeoLineage_cover_image.jpg)
 
 ## Features
 
