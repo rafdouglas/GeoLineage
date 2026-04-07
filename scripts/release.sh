@@ -71,7 +71,7 @@ while IFS= read -r -d '' pyfile; do
         echo "  SYNTAX ERROR: $pyfile"
         SYNTAX_OK=false
     fi
-done < <(find "$PROJECT_DIR/lineage_core" "$PROJECT_DIR/lineage_retrieval" "$PROJECT_DIR/lineage_viewer" -name "*.py" -print0)
+done < <(find "$PROJECT_DIR/lineage_core" "$PROJECT_DIR/lineage_manager" "$PROJECT_DIR/lineage_retrieval" "$PROJECT_DIR/lineage_viewer" -name "*.py" -print0)
 
 if [[ "$SYNTAX_OK" != "true" ]]; then
     echo "ERROR: Python syntax errors found. Fix before releasing."
@@ -99,7 +99,7 @@ cp "$PROJECT_DIR/LICENSE" "$BUILD_DIR/$PLUGIN_NAME/"
 cp "$PROJECT_DIR/README.md" "$BUILD_DIR/$PLUGIN_NAME/"
 
 # Python packages
-for pkg in lineage_core lineage_retrieval lineage_viewer; do
+for pkg in lineage_core lineage_manager lineage_retrieval lineage_viewer; do
     mkdir -p "$BUILD_DIR/$PLUGIN_NAME/$pkg"
     find "$PROJECT_DIR/$pkg" -name "*.py" ! -path "*__pycache__*" -exec cp {} "$BUILD_DIR/$PLUGIN_NAME/$pkg/" \;
 done
