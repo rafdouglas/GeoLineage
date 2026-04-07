@@ -18,7 +18,8 @@ changelog=0.5.3 - Add bandit CI security scan, ruff/bandit README badges, nosec 
     0.2.0 - Lineage graph viewer: interactive dock widget with Sugiyama layout, DOT/SVG/PNG export, search/highlight, detail panel
     0.1.0 - Initial release: core lineage recording, hooks, graph builder
 category=Database
-icon=resources/icon_on.png
+icon=assets/GeoLineage_logo.png
+preview=assets/GeoLineage_cover_image.jpg
 experimental=True
 deprecated=False
 hasProcessingProvider=no
