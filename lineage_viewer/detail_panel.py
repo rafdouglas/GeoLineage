@@ -164,6 +164,7 @@ class DetailPanel(_get_base_class()):
                         visible = not lbl.isVisible()
                         lbl.setVisible(visible)
                         btn.setText("Hide Parameters" if visible else "Show Parameters")
+
                     return _toggle
 
                 toggle_btn.clicked.connect(_make_toggle(toggle_btn, params_label))

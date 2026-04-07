@@ -28,8 +28,19 @@ class InspectDialog(_get_base_class()):
 
     # Column registry — single source of truth
     _COLUMNS = ["File", "ID", "Layer", "Type", "Tool", "User", "Summary", "Edit Summary", "Time", "Params", "Parents"]
-    (_COL_FILE, _COL_ID, _COL_LAYER, _COL_TYPE, _COL_TOOL, _COL_USER,
-     _COL_SUMMARY, _COL_EDIT_SUMMARY, _COL_TIME, _COL_PARAMS, _COL_PARENTS) = range(len(_COLUMNS))
+    (
+        _COL_FILE,
+        _COL_ID,
+        _COL_LAYER,
+        _COL_TYPE,
+        _COL_TOOL,
+        _COL_USER,
+        _COL_SUMMARY,
+        _COL_EDIT_SUMMARY,
+        _COL_TIME,
+        _COL_PARAMS,
+        _COL_PARENTS,
+    ) = range(len(_COLUMNS))
     _EDITABLE_COLS = {_COL_SUMMARY: "operation_summary", _COL_EDIT_SUMMARY: "edit_summary"}
 
     def __init__(self, project_dir: str, dock_widget=None, parent=None) -> None:

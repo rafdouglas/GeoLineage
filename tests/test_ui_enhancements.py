@@ -130,11 +130,15 @@ class TestColumnRegistry:
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "_EDITABLE_COLS" and isinstance(node.value, ast.Dict):
+                    if (
+                        isinstance(target, ast.Name)
+                        and target.id == "_EDITABLE_COLS"
+                        and isinstance(node.value, ast.Dict)
+                    ):
                         for key in node.value.keys:
-                                assert not isinstance(key, ast.Constant), (
-                                    f"_EDITABLE_COLS uses raw literal {key.value} instead of symbolic _COL_* name"
-                                )
+                            assert not isinstance(key, ast.Constant), (
+                                f"_EDITABLE_COLS uses raw literal {key.value} instead of symbolic _COL_* name"
+                            )
 
     def test_columns_include_file_user_params(self):
         """Verify new columns File, User, Params are in the registry."""
@@ -232,9 +236,7 @@ class TestMultiGpkgInspectDialog:
             if isinstance(node, ast.FunctionDef) and node.name == "__init__":
                 arg_names = [a.arg for a in node.args.args]
                 if "project_dir" in arg_names:
-                    assert "gpkg_path" not in arg_names, (
-                        "InspectDialog.__init__ should not have gpkg_path parameter"
-                    )
+                    assert "gpkg_path" not in arg_names, "InspectDialog.__init__ should not have gpkg_path parameter"
                     return
         # If we didn't find it by walking, do a simple text check
         assert "gpkg_path" not in source.split("def __init__")[1].split(")")[0]
