@@ -31,16 +31,16 @@
   </defs>
   <sodipodi:namedview
      id="namedview6"
-     pagecolor="#ffffff"
+     pagecolor="#ff0000"
      bordercolor="#000000"
      borderopacity="0.25"
      inkscape:showpageshadow="2"
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="1.3120145"
-     inkscape:cx="-52.971974"
-     inkscape:cy="341.45963"
+     inkscape:zoom="1.8554687"
+     inkscape:cx="80.30316"
+     inkscape:cy="371.87369"
      inkscape:window-width="3840"
      inkscape:window-height="2103"
      inkscape:window-x="0"
@@ -156,8 +156,8 @@
      id="rect1-6"
      width="255.73053"
      height="255.46106"
-     x="266.13474"
-     y="-3.5960388e-09"
+     x="266"
+     y="0"
      rx="14"
      ry="14"
      inkscape:export-filename="GeoLineage_icon_pause.png"
@@ -222,22 +222,21 @@
        style="fill:#ffb300;fill-opacity:1;stroke-width:1.09972"
        d="m 212.51758,5.4598702 c -9.20179,0.2634835 -17.94849,6.4647088 -21.13874,15.1180308 -3.05347,7.891353 -1.4888,17.419776 4.12745,23.790177 5.40609,6.330285 14.32548,9.501169 22.49709,7.75528 8.02929,-1.59008 15.07446,-7.614464 17.65465,-15.417053 2.63831,-7.595786 1.11546,-16.540016 -4.10783,-22.695075 -4.59026,-5.5560508 -11.81404,-8.8703294 -19.03262,-8.5513598 z" />
   </g>
-  <rect
-     style="fill:#737373;fill-opacity:1;stroke-width:16;stroke-linecap:round;stroke-miterlimit:10"
-     id="rect2-0"
-     width="51.394699"
-     height="149.84775"
-     x="315.52988"
-     y="58.815262"
-     rx="14.000001"
-     ry="14.000001" />
-  <rect
-     style="fill:#737373;fill-opacity:1;stroke-width:16;stroke-linecap:round;stroke-miterlimit:10"
-     id="rect3-9"
-     width="51.394699"
-     height="149.84775"
-     x="421.07541"
-     y="58.815262"
-     rx="14.000001"
-     ry="14.000001" />
+  <g
+     id="g3"
+     transform="matrix(0.56470571,0,0,0.56470571,105.22657,121.61513)"
+     style="stroke-width:1.77083">
+    <g
+       id="g2"
+       style="stroke-width:1.77083">
+      <path
+         id="rect2-0"
+         style="fill:#737373;stroke-width:28.3333;stroke-linecap:round;stroke-miterlimit:10"
+         d="m 329.52988,58.815262 h 23.39469 c 7.75601,0 14.00001,6.244 14.00001,14.000001 V 194.66301 c 0,7.756 -6.244,14 -14.00001,14 h -23.39469 c -7.756,0 -14,-6.244 -14,-14 V 72.815263 c 0,-7.756001 6.244,-14.000001 14,-14.000001 z" />
+      <path
+         id="rect3-9"
+         style="fill:#737373;stroke-width:28.3333;stroke-linecap:round;stroke-miterlimit:10"
+         d="m 412.52368,58.815262 h 23.3947 c 7.756,0 14,6.244 14,14.000001 V 194.66301 c 0,7.756 -6.244,14 -14,14 h -23.3947 c -7.756,0 -14,-6.244 -14,-14 V 72.815263 c 0,-7.756001 6.244,-14.000001 14,-14.000001 z" />
+    </g>
+  </g>
 </svg>
