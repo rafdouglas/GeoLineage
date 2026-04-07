@@ -35,34 +35,35 @@ class TestGetCreatedBy:
         mock_settings.return_value.value.return_value = value
         return mock_settings
 
-    @patch.dict("sys.modules", {"qgis": MagicMock(), "qgis.core": MagicMock()})
+    def _make_qgis_mocks(self, username: str):
+        """Build a linked qgis/qgis.core mock hierarchy with QgsSettings configured."""
+        mock_qgs_settings = MagicMock()
+        mock_qgs_settings.return_value.value.return_value = username
+        mock_qgis_core = MagicMock()
+        mock_qgis_core.QgsSettings = mock_qgs_settings
+        mock_qgis = MagicMock()
+        mock_qgis.core = mock_qgis_core
+        return mock_qgis, mock_qgis_core
+
     def test_returns_none_when_empty(self):
-        mock_qgs_settings = MagicMock()
-        mock_qgs_settings.return_value.value.return_value = ""
-
-        with patch("qgis.core.QgsSettings", mock_qgs_settings):
+        mock_qgis, mock_qgis_core = self._make_qgis_mocks("")
+        with patch.dict("sys.modules", {"qgis": mock_qgis, "qgis.core": mock_qgis_core}):
             from GeoLineage.lineage_core.hooks import _get_created_by
 
             result = _get_created_by()
             assert result is None
 
-    @patch.dict("sys.modules", {"qgis": MagicMock(), "qgis.core": MagicMock()})
     def test_returns_none_when_unset(self):
-        mock_qgs_settings = MagicMock()
-        mock_qgs_settings.return_value.value.return_value = ""
-
-        with patch("qgis.core.QgsSettings", mock_qgs_settings):
+        mock_qgis, mock_qgis_core = self._make_qgis_mocks("")
+        with patch.dict("sys.modules", {"qgis": mock_qgis, "qgis.core": mock_qgis_core}):
             from GeoLineage.lineage_core.hooks import _get_created_by
 
             result = _get_created_by()
             assert result is None
 
-    @patch.dict("sys.modules", {"qgis": MagicMock(), "qgis.core": MagicMock()})
     def test_returns_username_when_set(self):
-        mock_qgs_settings = MagicMock()
-        mock_qgs_settings.return_value.value.return_value = "alice"
-
-        with patch("qgis.core.QgsSettings", mock_qgs_settings):
+        mock_qgis, mock_qgis_core = self._make_qgis_mocks("alice")
+        with patch.dict("sys.modules", {"qgis": mock_qgis, "qgis.core": mock_qgis_core}):
             from GeoLineage.lineage_core.hooks import _get_created_by
 
             result = _get_created_by()
