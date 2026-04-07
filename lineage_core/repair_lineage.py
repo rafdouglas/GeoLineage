@@ -77,7 +77,7 @@ def repair_lineage(gpkg_path: str) -> list[dict]:
         # Check that the table exists.
         try:
             rows = conn.execute(
-                f"SELECT id, operation_tool, operation_params, parent_files FROM {LINEAGE_TABLE}"
+                f"SELECT id, operation_tool, operation_params, parent_files FROM {LINEAGE_TABLE}"  # noqa: S608  # nosec B608
             ).fetchall()
         except sqlite3.OperationalError as exc:
             logger.warning("Table %s not found in %s: %s", LINEAGE_TABLE, gpkg_path, exc)
@@ -112,7 +112,7 @@ def repair_lineage(gpkg_path: str) -> list[dict]:
             new_parent_files = json.dumps(parents)
             try:
                 conn.execute(
-                    f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",
+                    f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",  # noqa: S608  # nosec B608
                     (new_parent_files, row_id),
                 )
                 conn.commit()

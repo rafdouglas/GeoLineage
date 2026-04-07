@@ -1,6 +1,8 @@
 # GeoLineage
 
 [![CI](https://github.com/rafdouglas/GeoLineage/actions/workflows/ci.yml/badge.svg)](https://github.com/rafdouglas/GeoLineage/actions/workflows/ci.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
 A QGIS plugin that tracks data lineage in GeoPackage files. Every processing step, manual edit, and export is recorded directly inside the `.gpkg` file, creating a permanent chain of custody for your geospatial data.
 

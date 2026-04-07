@@ -26,6 +26,9 @@ jobs:
           ruff check .
           ruff format --check .
 
+      - name: Security scan with bandit
+        run: bandit -r lineage_core/ lineage_retrieval/ lineage_viewer/ lineage_manager/ -q
+
       - name: Run T1 tests with coverage
         # No PYTHONPATH env var needed: tests/conftest.py handles import
         # resolution via sys.path manipulation (adds the project root).

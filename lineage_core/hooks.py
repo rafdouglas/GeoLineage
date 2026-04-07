@@ -149,7 +149,7 @@ def _get_layer_id(obj: Any) -> str | None:
             layer = QgsProject.instance().mapLayer(obj)
             if layer is not None:
                 return layer.id()
-        except Exception:
+        except Exception:  # nosec B110
             pass
     return None
 
@@ -184,7 +184,7 @@ def _get_layer_source_path(obj: Any) -> str | None:
                     base = source.split("|")[0]
                     if os.path.isfile(base):
                         return base
-        except Exception:
+        except Exception:  # nosec B110
             pass
     return None
 

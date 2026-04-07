@@ -65,7 +65,7 @@ def compute_checksum(gpkg_path: str) -> str:
 
             # Read all rows in rowid order
             cols_sql = ", ".join(f'"{c}"' for c in col_names)
-            rows = conn.execute(f'SELECT {cols_sql} FROM "{table_name}" ORDER BY rowid ASC').fetchall()
+            rows = conn.execute(f'SELECT {cols_sql} FROM "{table_name}" ORDER BY rowid ASC').fetchall()  # noqa: S608  # nosec B608
 
             for row in rows:
                 for value in row:

@@ -42,7 +42,7 @@ def update_entry_field(db_path: str, entry_id: int, field: str, value: str) -> N
     # field is from a hardcoded allow-list, safe to interpolate into SQL
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            f"UPDATE {LINEAGE_TABLE} SET {field} = ? WHERE id = ?",  # noqa: S608
+            f"UPDATE {LINEAGE_TABLE} SET {field} = ? WHERE id = ?",  # noqa: S608  # nosec B608
             (value, entry_id),
         )
 
@@ -54,7 +54,7 @@ def delete_entry(db_path: str, entry_id: int) -> bool:
     """
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute(
-            f"DELETE FROM {LINEAGE_TABLE} WHERE id = ?",
+            f"DELETE FROM {LINEAGE_TABLE} WHERE id = ?",  # noqa: S608  # nosec B608
             (entry_id,),
         )
         return cursor.rowcount > 0
@@ -66,8 +66,8 @@ def drop_lineage_tables(db_path: str) -> None:
     Idempotent — no error if tables are already absent.
     """
     with sqlite3.connect(db_path) as conn:
-        conn.execute(f"DROP TABLE IF EXISTS {LINEAGE_TABLE}")
-        conn.execute(f"DROP TABLE IF EXISTS {META_TABLE}")
+        conn.execute(f"DROP TABLE IF EXISTS {LINEAGE_TABLE}")  # noqa: S608  # nosec B608
+        conn.execute(f"DROP TABLE IF EXISTS {META_TABLE}")  # noqa: S608  # nosec B608
     logger.info("Dropped lineage tables from %s", db_path)
 
 
@@ -131,7 +131,7 @@ def relink_parent(db_path: str, entry_id: int, old_path: str, new_path: str) -> 
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            f"SELECT parent_files FROM {LINEAGE_TABLE} WHERE id = ?",
+            f"SELECT parent_files FROM {LINEAGE_TABLE} WHERE id = ?",  # noqa: S608  # nosec B608
             (entry_id,),
         ).fetchone()
         if row is None:
@@ -145,7 +145,7 @@ def relink_parent(db_path: str, entry_id: int, old_path: str, new_path: str) -> 
             return
         updated = [new_path if p == old_path else p for p in parents]
         conn.execute(
-            f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",
+            f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",  # noqa: S608  # nosec B608
             (json.dumps(updated), entry_id),
         )
         conn.commit()
@@ -163,7 +163,7 @@ def batch_relink_prefix(db_path: str, old_prefix: str, new_prefix: str) -> int:
     modified_count = 0
     try:
         conn.execute("BEGIN IMMEDIATE")
-        rows = conn.execute(f"SELECT id, parent_files FROM {LINEAGE_TABLE}").fetchall()
+        rows = conn.execute(f"SELECT id, parent_files FROM {LINEAGE_TABLE}").fetchall()  # noqa: S608  # nosec B608
         for row_id, raw in rows:
             if not raw:
                 continue
@@ -176,7 +176,7 @@ def batch_relink_prefix(db_path: str, old_prefix: str, new_prefix: str) -> int:
             updated = [new_prefix + p[len(old_prefix) :] if p.startswith(old_prefix) else p for p in parents]
             if updated != parents:
                 conn.execute(
-                    f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",
+                    f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",  # noqa: S608  # nosec B608
                     (json.dumps(updated), row_id),
                 )
                 modified_count += 1

@@ -30,7 +30,7 @@ def record_processing(
             (layer_name, operation_summary, operation_tool, operation_params,
              parent_files, parent_metadata, parent_checksums, output_crs_epsg,
              created_by, entry_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'processing')""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'processing')""",  # noqa: S608  # nosec B608
             (
                 layer_name,
                 _build_processing_summary(tool, params),
@@ -65,7 +65,7 @@ def record_edit(
         cursor = conn.execute(
             f"""INSERT INTO {LINEAGE_TABLE}
             (layer_name, operation_summary, entry_type, edit_summary, created_by)
-            VALUES (?, ?, 'manual_edit', ?, ?)""",
+            VALUES (?, ?, 'manual_edit', ?, ?)""",  # noqa: S608  # nosec B608
             (layer_name, summary_text, json.dumps(edit_summary), created_by),
         )
         return cursor.lastrowid
@@ -90,7 +90,7 @@ def record_export(
             f"""INSERT INTO {LINEAGE_TABLE}
             (layer_name, operation_summary, parent_files, parent_metadata,
              parent_checksums, output_crs_epsg, created_by, entry_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'export')""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'export')""",  # noqa: S608  # nosec B608
             (
                 layer_name,
                 f"Exported from {parent_path}",
