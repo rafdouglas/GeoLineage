@@ -24,6 +24,10 @@ _HIGHLIGHT_COLOR = "#FFEB3B"
 _SELECTED_COLOR = "#FF6F00"
 _DEFAULT_NODE_WIDTH = 180.0
 _DEFAULT_NODE_HEIGHT = 60.0
+_HORIZONTAL_PADDING = 16.0
+_VERTICAL_PADDING = 16.0
+_MIN_NODE_WIDTH = 120.0
+_MIN_NODE_HEIGHT = 50.0
 
 
 def _get_base_class():
@@ -61,9 +65,35 @@ class GraphNodeItem(_get_base_class()):
         self._highlighted = False
         self._selected = False
 
-        # Build rounded rect path
+        # Calculate dynamic node size based on filename length
+        font_bold = QFont("Sans", 9)
+        font_bold.setBold(True)
+
+        # Strip .gpkg extension for cleaner display
+        display_name = node.filename.removesuffix(".gpkg")
+
+        # Create a temporary text item to measure width
+        temp_text = QGraphicsSimpleTextItem(display_name)
+        temp_text.setFont(font_bold)
+        filename_width = temp_text.boundingRect().width()
+
+        # Calculate width needed for operation text if present
+        op_text = self._get_operation_text(node)
+        op_width = 0
+        if op_text:
+            font_small = QFont("Sans", 7)
+            temp_op = QGraphicsSimpleTextItem(op_text)
+            temp_op.setFont(font_small)
+            op_width = temp_op.boundingRect().width()
+
+        # Node width is max of filename and operation text, plus padding, with minimum
+        needed_width = max(filename_width, op_width) + _HORIZONTAL_PADDING
+        node_width = max(needed_width, _MIN_NODE_WIDTH)
+        node_height = _DEFAULT_NODE_HEIGHT
+
+        # Build rounded rect path with calculated size
         path = QPainterPath()
-        path.addRoundedRect(0, 0, _DEFAULT_NODE_WIDTH, _DEFAULT_NODE_HEIGHT, 8.0, 8.0)
+        path.addRoundedRect(0, 0, node_width, node_height, 8.0, 8.0)
         self.setPath(path)
 
         # Position
@@ -81,33 +111,26 @@ class GraphNodeItem(_get_base_class()):
         self._default_pen = QPen(pen)
 
         # Filename label (bold, centered)
-        font_bold = QFont("Sans", 9)
-        font_bold.setBold(True)
-        # Strip .gpkg extension for cleaner display
-        display_name = node.filename.removesuffix(".gpkg")
         filename_item = QGraphicsSimpleTextItem(display_name, self)
         filename_item.setFont(font_bold)
         # Center horizontally
-        text_width = filename_item.boundingRect().width()
-        text_x = (_DEFAULT_NODE_WIDTH - text_width) / 2
+        text_x = (node_width - filename_width) / 2
         filename_item.setPos(max(4, text_x), 8)
 
         # Operation tool label (smaller, below filename)
-        op_text = self._get_operation_text(node)
         if op_text:
             font_small = QFont("Sans", 7)
             op_item = QGraphicsSimpleTextItem(op_text, self)
             op_item.setFont(font_small)
             op_item.setBrush(QBrush(QColor("#555555")))
-            op_width = op_item.boundingRect().width()
-            op_x = (_DEFAULT_NODE_WIDTH - op_width) / 2
+            op_x = (node_width - op_width) / 2
             op_item.setPos(max(4, op_x), 32)
 
         # Truncation indicator
         if node.truncated:
             trunc_item = QGraphicsSimpleTextItem("...", self)
             trunc_item.setFont(QFont("Sans", 10))
-            trunc_item.setPos(_DEFAULT_NODE_WIDTH - 20, _DEFAULT_NODE_HEIGHT - 18)
+            trunc_item.setPos(node_width - 20, node_height - 18)
 
         # Interaction flags
         self.setFlag(self.ItemIsSelectable, True)
