@@ -38,21 +38,27 @@ def _make_graph(nodes_dict, edges=(), root_path=""):
 
 
 def _assert_no_overlap(positions: dict[str, NodePosition], config: LayoutConfig):
-    """Assert no two node bounding boxes overlap."""
+    """Assert no two node bounding boxes overlap.
+
+    Uses per-node ``width`` from ``NodePosition`` (falls back to
+    ``config.node_width`` for backward compatibility).
+    """
     pos_list = list(positions.values())
     for i in range(len(pos_list)):
         for j in range(i + 1, len(pos_list)):
             a = pos_list[i]
             b = pos_list[j]
-            a_right = a.x + config.node_width
-            b_right = b.x + config.node_width
+            a_right = a.x + a.width
+            b_right = b.x + b.width
             a_bottom = a.y + config.node_height
             b_bottom = b.y + config.node_height
 
             x_overlap = a.x < b_right and b.x < a_right
             y_overlap = a.y < b_bottom and b.y < a_bottom
 
-            assert not (x_overlap and y_overlap), f"Nodes overlap: ({a.x},{a.y}) and ({b.x},{b.y})"
+            assert not (x_overlap and y_overlap), (
+                f"Nodes overlap: ({a.x},{a.y},w={a.width}) and ({b.x},{b.y},w={b.width})"
+            )
 
 
 class TestComputeLayoutEmpty:
@@ -452,6 +458,133 @@ class TestCycleHandling:
         result = compute_layout(graph)
         assert "/a.gpkg" in result.node_positions
         assert "/b.gpkg" in result.node_positions
+
+
+class TestVariableWidthNoOverlap:
+    """Nodes with different widths must not overlap."""
+
+    def test_wide_nodes_same_rank_no_overlap(self):
+        """Three nodes at the same rank with very different widths."""
+        nodes = {
+            "/short.gpkg": _make_node("/short.gpkg"),
+            "/a_very_long_filename_that_exceeds_default.gpkg": _make_node(
+                "/a_very_long_filename_that_exceeds_default.gpkg"
+            ),
+            "/another_extremely_long_filename.gpkg": _make_node(
+                "/another_extremely_long_filename.gpkg"
+            ),
+        }
+        graph = _make_graph(nodes)
+        config = LayoutConfig()
+        node_widths = {
+            "/short.gpkg": 120.0,
+            "/a_very_long_filename_that_exceeds_default.gpkg": 350.0,
+            "/another_extremely_long_filename.gpkg": 300.0,
+        }
+        result = compute_layout(graph, config, node_widths=node_widths)
+        assert len(result.node_positions) == 3
+        _assert_no_overlap(result.node_positions, config)
+
+    def test_variable_width_diamond_no_overlap(self):
+        """Diamond topology where middle-rank nodes have very different widths."""
+        nodes = {
+            "/root.gpkg": _make_node("/root.gpkg"),
+            "/wide_node_name.gpkg": _make_node("/wide_node_name.gpkg"),
+            "/x.gpkg": _make_node("/x.gpkg"),
+            "/sink.gpkg": _make_node("/sink.gpkg"),
+        }
+        edges = [
+            LineageEdge("/root.gpkg", "/wide_node_name.gpkg", 1),
+            LineageEdge("/root.gpkg", "/x.gpkg", 2),
+            LineageEdge("/wide_node_name.gpkg", "/sink.gpkg", 3),
+            LineageEdge("/x.gpkg", "/sink.gpkg", 4),
+        ]
+        graph = _make_graph(nodes, edges)
+        config = LayoutConfig()
+        node_widths = {
+            "/root.gpkg": 180.0,
+            "/wide_node_name.gpkg": 400.0,
+            "/x.gpkg": 120.0,
+            "/sink.gpkg": 180.0,
+        }
+        result = compute_layout(graph, config, node_widths=node_widths)
+        _assert_no_overlap(result.node_positions, config)
+
+    def test_node_position_stores_width(self):
+        """NodePosition.width should reflect the node_widths passed in."""
+        nodes = {"/a.gpkg": _make_node("/a.gpkg")}
+        graph = _make_graph(nodes, root_path="/a.gpkg")
+        result = compute_layout(graph, node_widths={"/a.gpkg": 250.0})
+        assert result.node_positions["/a.gpkg"].width == 250.0
+
+    def test_default_width_when_no_node_widths(self):
+        """Without node_widths, NodePosition.width defaults to config.node_width."""
+        nodes = {"/a.gpkg": _make_node("/a.gpkg")}
+        graph = _make_graph(nodes, root_path="/a.gpkg")
+        config = LayoutConfig(node_width=200.0)
+        result = compute_layout(graph, config)
+        assert result.node_positions["/a.gpkg"].width == 200.0
+
+
+class TestTransposeCrossingReduction:
+    """The transpose step should reduce or eliminate crossings."""
+
+    def test_transpose_eliminates_simple_crossing(self):
+        """A->D, B->C with A left of B: edges cross unless D is left of C.
+
+        After transpose, the ordering should avoid this crossing.
+        """
+        nodes = {
+            "/a.gpkg": _make_node("/a.gpkg"),
+            "/b.gpkg": _make_node("/b.gpkg"),
+            "/c.gpkg": _make_node("/c.gpkg"),
+            "/d.gpkg": _make_node("/d.gpkg"),
+        }
+        edges = [
+            LineageEdge("/a.gpkg", "/d.gpkg", 1),
+            LineageEdge("/b.gpkg", "/c.gpkg", 2),
+        ]
+        graph = _make_graph(nodes, edges)
+        result = compute_layout(graph)
+
+        a = result.node_positions["/a.gpkg"]
+        b = result.node_positions["/b.gpkg"]
+        c = result.node_positions["/c.gpkg"]
+        d = result.node_positions["/d.gpkg"]
+
+        # If A is left of B, then D should be left of C (no crossing)
+        if a.x < b.x:
+            assert d.x < c.x, "Transpose should eliminate this crossing"
+        else:
+            assert c.x < d.x, "Transpose should eliminate this crossing"
+
+    def test_crossing_with_three_parent_child_pairs(self):
+        """Three parents each connected to one child in reverse order."""
+        nodes = {
+            "/p1.gpkg": _make_node("/p1.gpkg"),
+            "/p2.gpkg": _make_node("/p2.gpkg"),
+            "/p3.gpkg": _make_node("/p3.gpkg"),
+            "/c1.gpkg": _make_node("/c1.gpkg"),
+            "/c2.gpkg": _make_node("/c2.gpkg"),
+            "/c3.gpkg": _make_node("/c3.gpkg"),
+        }
+        edges = [
+            LineageEdge("/p1.gpkg", "/c3.gpkg", 1),
+            LineageEdge("/p2.gpkg", "/c2.gpkg", 2),
+            LineageEdge("/p3.gpkg", "/c1.gpkg", 3),
+        ]
+        graph = _make_graph(nodes, edges)
+        result = compute_layout(graph)
+
+        # After crossing minimization, edges should not cross
+        parents = sorted(
+            [("/p1.gpkg", "/c3.gpkg"), ("/p2.gpkg", "/c2.gpkg"), ("/p3.gpkg", "/c1.gpkg")],
+            key=lambda pair: result.node_positions[pair[0]].x,
+        )
+        child_xs = [result.node_positions[pair[1]].x for pair in parents]
+        # Child x-coords should be non-decreasing (no crossings)
+        for i in range(len(child_xs) - 1):
+            assert child_xs[i] <= child_xs[i + 1], "Crossing minimisation should order children to match parents"
 
 
 class TestPerformance:

@@ -39,12 +39,16 @@ class NodePosition:
     which may differ from ``LineageNode.depth`` (BFS distance from the
     selected node).  Rank is used for visual positioning; depth is used
     by ``graph_builder`` for traversal control.
+
+    ``width`` holds the display width used by the layout engine so that
+    downstream rendering can match exactly.
     """
 
     x: float
     y: float
     layer: int
     order: int
+    width: float = 180.0
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,7 @@ class LayoutResult:
 def compute_layout(
     graph: LineageGraph,
     config: LayoutConfig | None = None,
+    node_widths: dict[str, float] | None = None,
 ) -> LayoutResult:
     """Compute positions and edge paths for a lineage graph.
 
@@ -93,12 +98,18 @@ def compute_layout(
     1. Cycle breaking   2. Rank assignment   3. Dummy insertion
     4. Crossing min     5. X-coordinate      6. Dummy removal
     7. Edge routing
+
+    ``node_widths`` maps node IDs to their display width in pixels.
+    When *None* or for missing keys, ``config.node_width`` is used.
     """
     if not graph.nodes:
         return LayoutResult(node_positions={}, edge_paths=())
 
     if config is None:
         config = LayoutConfig()
+
+    if node_widths is None:
+        node_widths = {}
 
     children_map, parents_map = _build_adjacency(graph)
 
@@ -115,7 +126,7 @@ def compute_layout(
     rank_lists = _minimise_crossings(rank_lists, aug_children, aug_parents)
 
     # Phase 5: x-coordinate assignment
-    all_positions = _assign_x_coordinates(rank_lists, config)
+    all_positions = _assign_x_coordinates(rank_lists, config, node_widths)
 
     # Phase 6: dummy removal — keep positions for routing
     node_positions: dict[str, NodePosition] = {}
@@ -123,10 +134,11 @@ def compute_layout(
         if node_id not in dummy_set:
             rank = ranks[node_id]
             order = rank_lists[rank].index(node_id)
-            node_positions[node_id] = NodePosition(x=x, y=y, layer=rank, order=order)
+            w = node_widths.get(node_id, config.node_width)
+            node_positions[node_id] = NodePosition(x=x, y=y, layer=rank, order=order, width=w)
 
     # Phase 7: edge routing
-    edge_paths = _route_edges(graph.edges, all_positions, dummy_set, reversed_edges, config)
+    edge_paths = _route_edges(graph.edges, all_positions, dummy_set, reversed_edges, config, node_widths)
 
     return LayoutResult(node_positions=node_positions, edge_paths=edge_paths)
 
@@ -315,7 +327,7 @@ def _minimise_crossings(
     parents_map: dict[str, list[str]],
     n_sweeps: int = 6,
 ) -> dict[int, list[str]]:
-    """Phase 4: barycenter heuristic with alternating sweeps."""
+    """Phase 4: barycenter heuristic with alternating sweeps + transpose."""
     sorted_ranks = sorted(rank_lists.keys())
     if len(sorted_ranks) <= 1:
         return rank_lists
@@ -338,6 +350,9 @@ def _minimise_crossings(
                 next_order = {node: idx for idx, node in enumerate(result[next_rank])}
                 result[rank] = _reorder_layer(result[rank], children_map, next_order)
 
+    # Transpose step: swap adjacent pairs when it reduces crossings
+    _transpose(result, sorted_ranks, children_map, parents_map)
+
     return result
 
 
@@ -358,24 +373,109 @@ def _reorder_layer(
     return [t[2] for t in barycenters]
 
 
+def _count_crossings_between_pair(
+    u: str,
+    v: str,
+    adj_order: dict[str, int],
+    adjacency: dict[str, list[str]],
+) -> int:
+    """Count edge crossings between u and v w.r.t. an adjacent rank.
+
+    u is left of v in the current rank.  A crossing occurs when an
+    edge from u goes to a position *right of* an edge from v (or
+    vice-versa) in the adjacent rank.
+    """
+    u_pos = sorted(adj_order[n] for n in adjacency.get(u, []) if n in adj_order)
+    v_pos = sorted(adj_order[n] for n in adjacency.get(v, []) if n in adj_order)
+    count = 0
+    for a in u_pos:
+        for b in v_pos:
+            if a > b:
+                count += 1
+    return count
+
+
+def _transpose(
+    result: dict[int, list[str]],
+    sorted_ranks: list[int],
+    children_map: dict[str, list[str]],
+    parents_map: dict[str, list[str]],
+) -> None:
+    """Transpose step: try swapping adjacent node pairs to reduce crossings.
+
+    Modifies *result* in place.  Converges quickly (typically 1-3 passes).
+    """
+    improved = True
+    while improved:
+        improved = False
+        for rank in sorted_ranks:
+            nodes = result[rank]
+            for i in range(len(nodes) - 1):
+                u, v = nodes[i], nodes[i + 1]
+                cross_before = 0
+                cross_after = 0
+
+                # Check against rank above (use parents_map)
+                rank_idx = sorted_ranks.index(rank)
+                if rank_idx > 0:
+                    above_rank = sorted_ranks[rank_idx - 1]
+                    above_order = {n: idx for idx, n in enumerate(result[above_rank])}
+                    cross_before += _count_crossings_between_pair(u, v, above_order, parents_map)
+                    cross_after += _count_crossings_between_pair(v, u, above_order, parents_map)
+
+                # Check against rank below (use children_map)
+                if rank_idx < len(sorted_ranks) - 1:
+                    below_rank = sorted_ranks[rank_idx + 1]
+                    below_order = {n: idx for idx, n in enumerate(result[below_rank])}
+                    cross_before += _count_crossings_between_pair(u, v, below_order, children_map)
+                    cross_after += _count_crossings_between_pair(v, u, below_order, children_map)
+
+                if cross_after < cross_before:
+                    nodes[i], nodes[i + 1] = nodes[i + 1], nodes[i]
+                    improved = True
+
+
 def _assign_x_coordinates(
     rank_lists: dict[int, list[str]],
     config: LayoutConfig,
+    node_widths: dict[str, float] | None = None,
 ) -> dict[str, tuple[float, float]]:
     """Phase 5: centered x-coordinate assignment.
 
-    Each rank is centered around x=0.
+    Each rank is centered around x=0.  When *node_widths* is provided,
+    nodes are spaced according to their individual widths so that no two
+    nodes in the same rank overlap.
     """
+    if node_widths is None:
+        node_widths = {}
+
     positions: dict[str, tuple[float, float]] = {}
-    cell_width = config.node_width + config.horizontal_gap
     cell_height = config.node_height + config.vertical_gap
 
     for rank, nodes in rank_lists.items():
         n = len(nodes)
-        for order, node in enumerate(nodes):
-            x = (order - (n - 1) / 2) * cell_width
-            y = rank * cell_height
-            positions[node] = (x, y)
+        if n == 0:
+            continue
+
+        # Place nodes left-to-right with per-node widths
+        x_cursor = 0.0
+        node_xs: list[float] = []
+        widths: list[float] = []
+        for node_id in nodes:
+            node_xs.append(x_cursor)
+            w = node_widths.get(node_id, config.node_width)
+            widths.append(w)
+            x_cursor += w + config.horizontal_gap
+
+        # Center the rank so the mean x-position of all node left-edges
+        # matches the old behavior: ``(order - (n-1)/2) * cell_width``.
+        # For uniform widths this produces identical coordinates.
+        mean_x = sum(node_xs) / n
+        offset = -mean_x
+
+        y = rank * cell_height
+        for i, node_id in enumerate(nodes):
+            positions[node_id] = (node_xs[i] + offset, y)
 
     return positions
 
@@ -386,13 +486,16 @@ def _route_edges(
     dummy_set: set[str],
     reversed_edges: set[tuple[str, str]],
     config: LayoutConfig,
+    node_widths: dict[str, float] | None = None,
 ) -> tuple[EdgePath, ...]:
     """Phase 7: collect waypoints from dummy node positions for each edge.
 
     Waypoints go from source bottom-center through dummy centers to
     target top-center.
     """
-    half_w = config.node_width / 2
+    if node_widths is None:
+        node_widths = {}
+    default_half_w = config.node_width / 2
     node_h = config.node_height
 
     # Build a lookup: (original_source, original_target) -> list of dummy ids in rank order
@@ -426,24 +529,26 @@ def _route_edges(
         # Build waypoints: source bottom-center -> dummy centers -> target top-center
         waypoints: list[tuple[float, float]] = []
 
-        # Source bottom-center
+        # Source bottom-center (use actual node width)
         sx, sy = all_positions[src]
-        waypoints.append((sx + half_w, sy + node_h))
+        src_half_w = node_widths.get(src, config.node_width) / 2
+        waypoints.append((sx + src_half_w, sy + node_h))
 
         # Dummy node centers (in layout order, but we need source->target order)
         if is_reversed:
             # Dummies go from tgt to src in layout; reverse for original direction
             for did in reversed(dummies):
                 dx, dy = all_positions[did]
-                waypoints.append((dx + half_w, dy + node_h / 2))
+                waypoints.append((dx + default_half_w, dy + node_h / 2))
         else:
             for did in dummies:
                 dx, dy = all_positions[did]
-                waypoints.append((dx + half_w, dy + node_h / 2))
+                waypoints.append((dx + default_half_w, dy + node_h / 2))
 
-        # Target top-center
+        # Target top-center (use actual node width)
         tx, ty = all_positions[tgt]
-        waypoints.append((tx + half_w, ty))
+        tgt_half_w = node_widths.get(tgt, config.node_width) / 2
+        waypoints.append((tx + tgt_half_w, ty))
 
         edge_paths.append(EdgePath(source=src, target=tgt, waypoints=tuple(waypoints)))
 

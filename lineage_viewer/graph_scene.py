@@ -61,7 +61,7 @@ class LineageGraphScene(_get_base_class()):
         """Clear scene, run layout, create node/edge items."""
         from .graph_edge_item import GraphEdgeItem
         from .graph_layout import compute_layout
-        from .graph_node_item import GraphNodeItem
+        from .graph_node_item import GraphNodeItem, compute_node_display_width
 
         self.clear()
         self._node_items.clear()
@@ -71,7 +71,14 @@ class LineageGraphScene(_get_base_class()):
         if not graph.nodes:
             return
 
-        result = compute_layout(graph, self._config)
+        # Pre-compute per-node display widths so the layout engine can
+        # space nodes according to their actual rendered size.
+        node_widths = {
+            path: compute_node_display_width(node)
+            for path, node in graph.nodes.items()
+        }
+
+        result = compute_layout(graph, self._config, node_widths=node_widths)
         selected_node = graph.root_path
 
         # Create node items

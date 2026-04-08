@@ -30,6 +30,48 @@ _MIN_NODE_WIDTH = 120.0
 _MIN_NODE_HEIGHT = 50.0
 
 
+def _get_operation_text(node: LineageNode) -> str:
+    """Get operation tool text from node entries."""
+    if not node.entries:
+        return ""
+    tools = {e.get("operation_tool", "") for e in node.entries if e.get("operation_tool")}
+    if len(tools) == 1:
+        return tools.pop()
+    if len(tools) > 1:
+        return "Multiple operations"
+    return ""
+
+
+def compute_node_display_width(node: LineageNode) -> float:
+    """Compute the display width for a node using Qt font metrics.
+
+    This is the single source of truth for node width, used by both
+    the layout engine (for spacing) and ``GraphNodeItem`` (for rendering).
+    Requires a running QApplication.
+    """
+    from qgis.PyQt.QtGui import QFont
+    from qgis.PyQt.QtWidgets import QGraphicsSimpleTextItem
+
+    font_bold = QFont("Sans", 9)
+    font_bold.setBold(True)
+
+    display_name = node.filename.removesuffix(".gpkg")
+    temp_text = QGraphicsSimpleTextItem(display_name)
+    temp_text.setFont(font_bold)
+    filename_width = temp_text.boundingRect().width()
+
+    op_text = _get_operation_text(node)
+    op_width = 0.0
+    if op_text:
+        font_small = QFont("Sans", 7)
+        temp_op = QGraphicsSimpleTextItem(op_text)
+        temp_op.setFont(font_small)
+        op_width = temp_op.boundingRect().width()
+
+    needed_width = max(filename_width, op_width) + _HORIZONTAL_PADDING
+    return max(needed_width, _MIN_NODE_WIDTH)
+
+
 def _get_base_class():
     """Return QGraphicsPathItem at runtime, object for static analysis."""
     try:
@@ -65,31 +107,30 @@ class GraphNodeItem(_get_base_class()):
         self._highlighted = False
         self._selected = False
 
-        # Calculate dynamic node size based on filename length
-        font_bold = QFont("Sans", 9)
-        font_bold.setBold(True)
+        # Use the width assigned by the layout engine (single source of truth)
+        node_width = position.width
+        node_height = _DEFAULT_NODE_HEIGHT
 
         # Strip .gpkg extension for cleaner display
         display_name = node.filename.removesuffix(".gpkg")
 
-        # Create a temporary text item to measure width
+        # Font for filename label
+        font_bold = QFont("Sans", 9)
+        font_bold.setBold(True)
+
+        # Measure filename width for centering
         temp_text = QGraphicsSimpleTextItem(display_name)
         temp_text.setFont(font_bold)
         filename_width = temp_text.boundingRect().width()
 
-        # Calculate width needed for operation text if present
-        op_text = self._get_operation_text(node)
-        op_width = 0
+        # Measure operation text width for centering
+        op_text = _get_operation_text(node)
+        op_width = 0.0
         if op_text:
             font_small = QFont("Sans", 7)
             temp_op = QGraphicsSimpleTextItem(op_text)
             temp_op.setFont(font_small)
             op_width = temp_op.boundingRect().width()
-
-        # Node width is max of filename and operation text, plus padding, with minimum
-        needed_width = max(filename_width, op_width) + _HORIZONTAL_PADDING
-        node_width = max(needed_width, _MIN_NODE_WIDTH)
-        node_height = _DEFAULT_NODE_HEIGHT
 
         # Build rounded rect path with calculated size
         path = QPainterPath()
@@ -153,14 +194,7 @@ class GraphNodeItem(_get_base_class()):
     @staticmethod
     def _get_operation_text(node: LineageNode) -> str:
         """Get operation tool text from node entries."""
-        if not node.entries:
-            return ""
-        tools = {e.get("operation_tool", "") for e in node.entries if e.get("operation_tool")}
-        if len(tools) == 1:
-            return tools.pop()
-        if len(tools) > 1:
-            return "Multiple operations"
-        return ""
+        return _get_operation_text(node)
 
     def node(self) -> LineageNode:
         """Return the associated LineageNode."""
