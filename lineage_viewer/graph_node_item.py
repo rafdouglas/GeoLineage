@@ -83,7 +83,9 @@ class GraphNodeItem(_get_base_class()):
         # Filename label (bold, centered)
         font_bold = QFont("Sans", 9)
         font_bold.setBold(True)
-        filename_item = QGraphicsSimpleTextItem(node.filename, self)
+        # Strip .gpkg extension for cleaner display
+        display_name = node.filename.removesuffix(".gpkg")
+        filename_item = QGraphicsSimpleTextItem(display_name, self)
         filename_item.setFont(font_bold)
         # Center horizontally
         text_width = filename_item.boundingRect().width()
