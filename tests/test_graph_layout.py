@@ -645,6 +645,48 @@ class TestInterpolateWaypoints:
         assert result == [src, tgt]
 
 
+class TestInterpolateWaypointsYAxis:
+    """Verify y-coordinates use proportional interpolation, not original values."""
+
+    def test_y_interpolated_not_preserved(self):
+        """Original middle y=50 but proportional t_y gives 50."""
+        from GeoLineage.lineage_viewer.graph_edge_item import _interpolate_waypoints
+
+        src = (0.0, 0.0)
+        tgt = (100.0, 200.0)
+        original = [(0.0, 0.0), (50.0, 50.0), (100.0, 200.0)]
+        result = _interpolate_waypoints(src, tgt, original)
+        # t_y = (50 - 0) / (200 - 0) = 0.25, interp_y = 0 + 200 * 0.25 = 50
+        assert result[1][1] == 50.0
+
+    def test_vertical_drag_shifts_intermediates(self):
+        """Source moved down: intermediates shift proportionally."""
+        from GeoLineage.lineage_viewer.graph_edge_item import _interpolate_waypoints
+
+        src = (0.0, 100.0)
+        tgt = (100.0, 400.0)
+        original = [(0.0, 0.0), (50.0, 100.0), (50.0, 200.0), (50.0, 300.0), (100.0, 400.0)]
+        result = _interpolate_waypoints(src, tgt, original)
+        # orig_span = 400, new_span = 300
+        # t_y for wp1: (100-0)/400 = 0.25 -> 100 + 300*0.25 = 175
+        # t_y for wp2: (200-0)/400 = 0.50 -> 100 + 300*0.50 = 250
+        # t_y for wp3: (300-0)/400 = 0.75 -> 100 + 300*0.75 = 325
+        assert result[1][1] == 175.0
+        assert result[2][1] == 250.0
+        assert result[3][1] == 325.0
+
+    def test_zero_span_y_uses_uniform(self):
+        """All original waypoints at same y: uses uniform t fallback."""
+        from GeoLineage.lineage_viewer.graph_edge_item import _interpolate_waypoints
+
+        src = (0.0, 0.0)
+        tgt = (100.0, 200.0)
+        original = [(0.0, 50.0), (50.0, 50.0), (100.0, 50.0)]
+        result = _interpolate_waypoints(src, tgt, original)
+        # orig_span_y = 0, falls back to uniform t = 0.5
+        assert result[1][1] == 100.0
+
+
 class TestPerformance:
     def test_50_node_graph_under_one_second(self):
         nodes = {}

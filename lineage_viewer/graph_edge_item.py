@@ -18,21 +18,33 @@ def _interpolate_waypoints(
     target_pos: tuple[float, float],
     original_waypoints: Sequence[tuple[float, float]],
 ) -> list[tuple[float, float]]:
-    """Linearly interpolate intermediate waypoint x-coords between endpoints.
+    """Interpolate intermediate waypoint positions between endpoints.
 
     For a 2-point edge (no intermediates), returns [source_pos, target_pos].
     For multi-rank edges, each intermediate waypoint gets an interpolated
-    x-coordinate while keeping its original y-coordinate fixed.
+    x-coordinate (uniform spacing) and a proportionally interpolated
+    y-coordinate that preserves the waypoint's relative position within the
+    original y-span.  When the original y-span is zero, falls back to
+    uniform y-interpolation.
     """
     if len(original_waypoints) <= 2:
         return [source_pos, target_pos]
+
+    orig_src_y = original_waypoints[0][1]
+    orig_tgt_y = original_waypoints[-1][1]
+    orig_span_y = orig_tgt_y - orig_src_y
 
     result: list[tuple[float, float]] = [source_pos]
     n_intermediates = len(original_waypoints) - 2
     for i, wp in enumerate(original_waypoints[1:-1], start=1):
         t = i / (n_intermediates + 1)
         interp_x = source_pos[0] + (target_pos[0] - source_pos[0]) * t
-        result.append((interp_x, wp[1]))
+        if orig_span_y != 0:
+            t_y = (wp[1] - orig_src_y) / orig_span_y
+            interp_y = source_pos[1] + (target_pos[1] - source_pos[1]) * t_y
+        else:
+            interp_y = source_pos[1] + (target_pos[1] - source_pos[1]) * t
+        result.append((interp_x, interp_y))
     result.append(target_pos)
     return result
 
@@ -109,9 +121,8 @@ class GraphEdgeItem(_get_base_class()):
     def update_path(self) -> None:
         """Recalculate path from current node positions.
 
-        For multi-rank edges, linearly interpolates intermediate waypoint
-        x-coordinates between source and target x-centers, keeping
-        y-coordinates fixed.
+        For multi-rank edges, interpolates intermediate waypoint x-coordinates
+        uniformly and y-coordinates proportionally between source and target.
         """
         if self._source_node_item is None or self._target_node_item is None:
             return

@@ -183,6 +183,8 @@ class GraphNodeItem(_get_base_class()):
         self._connected_edges: list = []
         self._drag_started = False
         self._original_z = 0.0
+        self._shift_axis: str | None = None
+        self._drag_origin: tuple[float, float] | None = None
 
         # Tooltip
         tooltip_lines = [
@@ -211,21 +213,44 @@ class GraphNodeItem(_get_base_class()):
         self._connected_edges.append(edge_item)
 
     def itemChange(self, change, value):
-        """Handle position changes for drag: z-ordering + edge updates."""
-        if change == self.ItemPositionChange and not self._drag_started:
-            self._drag_started = True
-            self._original_z = self.zValue()
-            self.setZValue(self._original_z + 1)
+        """Handle position changes for drag: z-ordering, Shift-constrain, edge updates."""
+        if change == self.ItemPositionChange:
+            if not self._drag_started:
+                self._drag_started = True
+                self._original_z = self.zValue()
+                self.setZValue(self._original_z + 1)
+                self._drag_origin = (self.pos().x(), self.pos().y())
+                self._shift_axis = None
+
+            from qgis.PyQt.QtCore import Qt
+            from qgis.PyQt.QtWidgets import QApplication
+
+            if QApplication.queryKeyboardModifiers() & Qt.ShiftModifier:
+                if self._drag_origin is not None:
+                    dx = abs(value.x() - self._drag_origin[0])
+                    dy = abs(value.y() - self._drag_origin[1])
+                    if self._shift_axis is None and (dx > 4 or dy > 4):
+                        self._shift_axis = "h" if dx >= dy else "v"
+                    if self._shift_axis == "h":
+                        value.setY(self._drag_origin[1])
+                    elif self._shift_axis == "v":
+                        value.setX(self._drag_origin[0])
+            else:
+                self._shift_axis = None
+
         elif change == self.ItemPositionHasChanged:
             for edge in self._connected_edges:
                 edge.update_path()
+
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event) -> None:
-        """Restore z-order after drag ends."""
+        """Restore z-order and reset drag state after drag ends."""
         if self._drag_started:
             self._drag_started = False
             self.setZValue(self._original_z)
+            self._shift_axis = None
+            self._drag_origin = None
         super().mouseReleaseEvent(event)
 
     def set_highlighted(self, highlighted: bool) -> None:
