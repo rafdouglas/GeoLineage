@@ -73,10 +73,7 @@ class LineageGraphScene(_get_base_class()):
 
         # Pre-compute per-node display widths so the layout engine can
         # space nodes according to their actual rendered size.
-        node_widths = {
-            path: compute_node_display_width(node)
-            for path, node in graph.nodes.items()
-        }
+        node_widths = {path: compute_node_display_width(node) for path, node in graph.nodes.items()}
 
         result = compute_layout(graph, self._config, node_widths=node_widths)
         selected_node = graph.root_path
@@ -92,7 +89,7 @@ class LineageGraphScene(_get_base_class()):
             self.addItem(item)
             self._node_items[path] = item
 
-        # Create edge items from edge_paths
+        # Create edge items from edge_paths and wire node-edge connections
         for edge_path in result.edge_paths:
             matching_edge = next(
                 (e for e in graph.edges if e.parent_path == edge_path.source and e.child_path == edge_path.target),
@@ -103,6 +100,43 @@ class LineageGraphScene(_get_base_class()):
             item = GraphEdgeItem(matching_edge, edge_path.waypoints, self._config)
             self.addItem(item)
             self._edge_items.append(item)
+
+            # Wire edge to its source and target node items
+            source_node_item = self._node_items.get(edge_path.source)
+            target_node_item = self._node_items.get(edge_path.target)
+            if source_node_item and target_node_item:
+                item.set_node_items(source_node_item, target_node_item)
+                source_node_item.add_connected_edge(item)
+                target_node_item.add_connected_edge(item)
+
+    def reset_layout(self) -> None:
+        """Re-run Sugiyama layout and reposition existing items.
+
+        Does NOT call set_graph() or clear() -- preserves item references,
+        selection state, and highlights. Computes fresh positions, then
+        setPos() on existing GraphNodeItems and set_waypoints() on
+        existing GraphEdgeItems.
+        """
+        if self._current_graph is None:
+            return
+
+        from .graph_layout import compute_layout
+        from .graph_node_item import compute_node_display_width
+
+        node_widths = {path: compute_node_display_width(node) for path, node in self._current_graph.nodes.items()}
+
+        result = compute_layout(self._current_graph, self._config, node_widths=node_widths)
+
+        # Reposition nodes (triggers itemChange -> update_path on edges)
+        for path, node_item in self._node_items.items():
+            pos = result.node_positions.get(path)
+            if pos is not None:
+                node_item.setPos(pos.x, pos.y)
+
+        # Explicitly reset edge waypoints to layout-computed paths
+        for i, edge_item in enumerate(self._edge_items):
+            if i < len(result.edge_paths):
+                edge_item.set_waypoints(result.edge_paths[i].waypoints)
 
     def highlight_nodes(self, filename_pattern: str) -> None:
         """Highlight nodes whose filename matches pattern (case-insensitive substring).

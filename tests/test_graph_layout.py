@@ -470,9 +470,7 @@ class TestVariableWidthNoOverlap:
             "/a_very_long_filename_that_exceeds_default.gpkg": _make_node(
                 "/a_very_long_filename_that_exceeds_default.gpkg"
             ),
-            "/another_extremely_long_filename.gpkg": _make_node(
-                "/another_extremely_long_filename.gpkg"
-            ),
+            "/another_extremely_long_filename.gpkg": _make_node("/another_extremely_long_filename.gpkg"),
         }
         graph = _make_graph(nodes)
         config = LayoutConfig()
@@ -585,6 +583,66 @@ class TestTransposeCrossingReduction:
         # Child x-coords should be non-decreasing (no crossings)
         for i in range(len(child_xs) - 1):
             assert child_xs[i] <= child_xs[i + 1], "Crossing minimisation should order children to match parents"
+
+
+class TestInterpolateWaypoints:
+    """Test _interpolate_waypoints free function (no Qt needed)."""
+
+    def test_two_point_edge_returns_endpoints(self):
+        from GeoLineage.lineage_viewer.graph_edge_item import _interpolate_waypoints
+
+        src = (10.0, 0.0)
+        tgt = (20.0, 100.0)
+        result = _interpolate_waypoints(src, tgt, [src, tgt])
+        assert result == [src, tgt]
+
+    def test_three_point_edge_interpolates_middle(self):
+        from GeoLineage.lineage_viewer.graph_edge_item import _interpolate_waypoints
+
+        src = (0.0, 0.0)
+        tgt = (100.0, 200.0)
+        original = [(0.0, 0.0), (50.0, 100.0), (100.0, 200.0)]
+        result = _interpolate_waypoints(src, tgt, original)
+        assert len(result) == 3
+        assert result[0] == src
+        assert result[2] == tgt
+        # Middle x should be interpolated to halfway between src and tgt
+        assert result[1][0] == 50.0
+        # Middle y stays at original
+        assert result[1][1] == 100.0
+
+    def test_five_point_edge_preserves_y_interpolates_x(self):
+        from GeoLineage.lineage_viewer.graph_edge_item import _interpolate_waypoints
+
+        src = (0.0, 0.0)
+        tgt = (100.0, 400.0)
+        original = [
+            (0.0, 0.0),
+            (999.0, 100.0),
+            (999.0, 200.0),
+            (999.0, 300.0),
+            (100.0, 400.0),
+        ]
+        result = _interpolate_waypoints(src, tgt, original)
+        assert len(result) == 5
+        assert result[0] == src
+        assert result[4] == tgt
+        # Intermediate x-coords should be evenly interpolated
+        assert result[1][0] == 25.0  # 100 * 1/4
+        assert result[2][0] == 50.0  # 100 * 2/4
+        assert result[3][0] == 75.0  # 100 * 3/4
+        # Y-coords preserved from originals
+        assert result[1][1] == 100.0
+        assert result[2][1] == 200.0
+        assert result[3][1] == 300.0
+
+    def test_single_point_returns_endpoints(self):
+        from GeoLineage.lineage_viewer.graph_edge_item import _interpolate_waypoints
+
+        src = (10.0, 0.0)
+        tgt = (20.0, 50.0)
+        result = _interpolate_waypoints(src, tgt, [(10.0, 0.0)])
+        assert result == [src, tgt]
 
 
 class TestPerformance:

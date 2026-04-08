@@ -37,7 +37,6 @@ class LineageDockWidget(_get_dock_base()):
         from qgis.PyQt.QtCore import Qt
         from qgis.PyQt.QtWidgets import (
             QDockWidget,
-            QGraphicsView,
             QSplitter,
             QVBoxLayout,
             QWidget,
@@ -60,9 +59,8 @@ class LineageDockWidget(_get_dock_base()):
         from .toolbar import ViewerToolbar
 
         self._scene = LineageGraphScene()
-        self._view = QGraphicsView(self._scene)
+        self._view = _LineageGraphView(self._scene)
         self._view.setRenderHints(self._view.renderHints())
-        self._view.setDragMode(QGraphicsView.ScrollHandDrag)
 
         self._detail_panel = DetailPanel()
         self._toolbar = ViewerToolbar()
@@ -88,6 +86,7 @@ class LineageDockWidget(_get_dock_base()):
             on_zoom_in=self._on_zoom_in,
             on_zoom_out=self._on_zoom_out,
             on_reload=self._on_reload,
+            on_reset_layout=self._scene.reset_layout,
             on_search_changed=self._scene.highlight_nodes,
             on_export=self._on_export,
         )
@@ -234,6 +233,73 @@ class LineageDockWidget(_get_dock_base()):
             path, _ = QFileDialog.getSaveFileName(self, "Export PNG", "", "PNG files (*.png)")
             if path:
                 export_png(self._scene, path)
+
+
+def _get_view_base():
+    """Return QGraphicsView at runtime, object for static analysis."""
+    try:
+        from qgis.PyQt.QtWidgets import QGraphicsView
+
+        return QGraphicsView
+    except ImportError:
+        return object
+
+
+class _LineageGraphView(_get_view_base()):  # noqa: F811
+    """QGraphicsView with right-click-drag pan (GIS convention).
+
+    Left-click drag is handled by Qt's ItemIsMovable on GraphNodeItem.
+    Right-click-drag pans the view. Right-click without movement (< 4px)
+    lets the context menu fire normally.
+    """
+
+    def __init__(self, scene, parent=None) -> None:
+        from qgis.PyQt.QtCore import Qt
+        from qgis.PyQt.QtWidgets import QGraphicsView
+
+        super().__init__(scene, parent)
+        self.setDragMode(QGraphicsView.NoDrag)
+        self.setCursor(Qt.OpenHandCursor)
+        self._panning = False
+        self._pan_start = None
+        self._pan_total_dist = 0.0
+
+    def mousePressEvent(self, event) -> None:
+        from qgis.PyQt.QtCore import Qt
+
+        if event.button() == Qt.RightButton:
+            self._panning = True
+            self._pan_start = event.pos()
+            self._pan_total_dist = 0.0
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._panning and self._pan_start is not None:
+            delta = event.pos() - self._pan_start
+            self._pan_total_dist += (delta.x() ** 2 + delta.y() ** 2) ** 0.5
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            self._pan_start = event.pos()
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        from qgis.PyQt.QtCore import Qt
+
+        if event.button() == Qt.RightButton and self._panning:
+            self._panning = False
+            self.setCursor(Qt.OpenHandCursor)
+            if self._pan_total_dist < 4:
+                # No real drag -- let context menu fire
+                super().mouseReleaseEvent(event)
+            else:
+                event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
 
 def _merge_graphs(base, extension):

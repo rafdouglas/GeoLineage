@@ -175,8 +175,14 @@ class GraphNodeItem(_get_base_class()):
 
         # Interaction flags
         self.setFlag(self.ItemIsSelectable, True)
-        self.setFlag(self.ItemIsMovable, False)
+        self.setFlag(self.ItemIsMovable, True)
+        self.setFlag(self.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
+
+        # Drag state
+        self._connected_edges: list = []
+        self._drag_started = False
+        self._original_z = 0.0
 
         # Tooltip
         tooltip_lines = [
@@ -199,6 +205,28 @@ class GraphNodeItem(_get_base_class()):
     def node(self) -> LineageNode:
         """Return the associated LineageNode."""
         return self._node
+
+    def add_connected_edge(self, edge_item) -> None:
+        """Register an edge that should update when this node moves."""
+        self._connected_edges.append(edge_item)
+
+    def itemChange(self, change, value):
+        """Handle position changes for drag: z-ordering + edge updates."""
+        if change == self.ItemPositionChange and not self._drag_started:
+            self._drag_started = True
+            self._original_z = self.zValue()
+            self.setZValue(self._original_z + 1)
+        elif change == self.ItemPositionHasChanged:
+            for edge in self._connected_edges:
+                edge.update_path()
+        return super().itemChange(change, value)
+
+    def mouseReleaseEvent(self, event) -> None:
+        """Restore z-order after drag ends."""
+        if self._drag_started:
+            self._drag_started = False
+            self.setZValue(self._original_z)
+        super().mouseReleaseEvent(event)
 
     def set_highlighted(self, highlighted: bool) -> None:
         """Toggle search-highlight border (thick blue outline)."""

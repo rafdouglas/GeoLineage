@@ -28,6 +28,7 @@ class ViewerToolbar(_get_base_class()):
         self._on_zoom_in_requested = None
         self._on_zoom_out_requested = None
         self._on_reload_requested = None
+        self._on_reset_layout_requested = None
         self._on_search_changed = None
         self._on_export_requested = None
 
@@ -54,6 +55,12 @@ class ViewerToolbar(_get_base_class()):
         self._reload_action.setToolTip("Reload lineage graph")
         self._reload_action.triggered.connect(lambda: self._emit_reload())
         self.addAction(self._reload_action)
+
+        # Reset Layout
+        self._reset_layout_action = QAction("Reset Layout", self)
+        self._reset_layout_action.setToolTip("Reset nodes to auto-layout positions")
+        self._reset_layout_action.triggered.connect(lambda: self._emit_reset_layout())
+        self.addAction(self._reset_layout_action)
 
         self.addSeparator()
 
@@ -85,6 +92,7 @@ class ViewerToolbar(_get_base_class()):
         on_zoom_in=None,
         on_zoom_out=None,
         on_reload=None,
+        on_reset_layout=None,
         on_search_changed=None,
         on_export=None,
     ) -> None:
@@ -93,6 +101,7 @@ class ViewerToolbar(_get_base_class()):
         self._on_zoom_in_requested = on_zoom_in
         self._on_zoom_out_requested = on_zoom_out
         self._on_reload_requested = on_reload
+        self._on_reset_layout_requested = on_reset_layout
         self._on_search_changed = on_search_changed
         self._on_export_requested = on_export
 
@@ -119,6 +128,10 @@ class ViewerToolbar(_get_base_class()):
     def _emit_reload(self) -> None:
         if self._on_reload_requested:
             self._on_reload_requested()
+
+    def _emit_reset_layout(self) -> None:
+        if self._on_reset_layout_requested:
+            self._on_reset_layout_requested()
 
     def _emit_export(self, fmt: str) -> None:
         if self._on_export_requested:
