@@ -53,8 +53,8 @@ def compute_checksum_via_conn(conn: sqlite3.Connection) -> str:
         pk_cols = [row[1] for row in conn.execute(f"PRAGMA table_info('{table_name}')") if row[5] > 0]
         order_clause = ", ".join(f'"{c}"' for c in pk_cols) if pk_cols else "rowid"
         cols_sql = ", ".join(f'"{c}"' for c in col_names)
-        rows = conn.execute(  # noqa: S608  # nosec B608
-            f'SELECT {cols_sql} FROM "{table_name}" ORDER BY {order_clause} ASC'
+        rows = conn.execute(
+            f'SELECT {cols_sql} FROM "{table_name}" ORDER BY {order_clause} ASC'  # noqa: S608  # nosec B608
         ).fetchall()
 
         for row in rows:
@@ -104,8 +104,8 @@ def compute_checksum(gpkg_path: str) -> str:
             ]
             order_clause = ", ".join(f'"{c}"' for c in pk_cols) if pk_cols else "rowid"
             cols_sql = ", ".join(f'"{c}"' for c in col_names)
-            rows = conn.execute(  # noqa: S608  # nosec B608
-                f'SELECT {cols_sql} FROM "{table_name}" ORDER BY {order_clause} ASC'
+            rows = conn.execute(
+                f'SELECT {cols_sql} FROM "{table_name}" ORDER BY {order_clause} ASC'  # noqa: S608  # nosec B608
             ).fetchall()
 
             for row in rows:
