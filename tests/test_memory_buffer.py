@@ -219,9 +219,7 @@ def test_flush_does_not_cleanup_on_record_failure(tmp_path):
         raise OSError("simulated disk error")
 
     with pytest.MonkeyPatch().context() as mp:
-        mp.setattr(
-            "GeoLineage.lineage_core.memory_buffer.record_processing", failing_record
-        )
+        mp.setattr("GeoLineage.lineage_core.memory_buffer.record_processing", failing_record)
         with pytest.raises(IOError):
             buf.flush(b_id, str(tmp_path / "out.gpkg"))
 

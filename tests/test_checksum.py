@@ -198,8 +198,8 @@ def test_value_length_delimiter_prevents_collision(tmp_path):
         conn.close()
         return path
 
-    path_a = _build("a.gpkg", f"a{etx}", "")   # col1 ends with type-tag byte
-    path_b = _build("b.gpkg", "a", etx)         # col2 starts with type-tag byte
+    path_a = _build("a.gpkg", f"a{etx}", "")  # col1 ends with type-tag byte
+    path_b = _build("b.gpkg", "a", etx)  # col2 starts with type-tag byte
 
     assert compute_checksum(str(path_a)) != compute_checksum(str(path_b))
 

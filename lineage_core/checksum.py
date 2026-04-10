@@ -50,11 +50,7 @@ def compute_checksum_via_conn(conn: sqlite3.Connection) -> str:
         col_info = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
         col_names = [info[1] for info in sorted(col_info, key=lambda x: x[0])]
 
-        pk_cols = [
-            row[1]
-            for row in conn.execute(f"PRAGMA table_info('{table_name}')")
-            if row[5] > 0
-        ]
+        pk_cols = [row[1] for row in conn.execute(f"PRAGMA table_info('{table_name}')") if row[5] > 0]
         order_clause = ", ".join(f'"{c}"' for c in pk_cols) if pk_cols else "rowid"
         cols_sql = ", ".join(f'"{c}"' for c in col_names)
         rows = conn.execute(  # noqa: S608  # nosec B608

@@ -134,10 +134,7 @@ def _get_input_keys(algorithm_name: str) -> tuple[str, ...]:
         alg = QgsApplication.processingRegistry().algorithmById(algorithm_name)
         if alg is None:
             return _FALLBACK_INPUT_KEYS
-        keys = tuple(
-            p.name() for p in alg.parameterDefinitions()
-            if type(p).__name__ in _VECTOR_PARAM_TYPES
-        )
+        keys = tuple(p.name() for p in alg.parameterDefinitions() if type(p).__name__ in _VECTOR_PARAM_TYPES)
         return keys or _FALLBACK_INPUT_KEYS
     except Exception:
         return _FALLBACK_INPUT_KEYS

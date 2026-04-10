@@ -601,6 +601,4 @@ class TestSingleConnectionPerFile:
         build_graph(child_path, str(tmp_path))
 
         parent_opens = connect_calls.count(parent_path)
-        assert parent_opens <= 1, (
-            f"parent.gpkg was opened {parent_opens} times via sqlite3.connect; expected ≤1"
-        )
+        assert parent_opens <= 1, f"parent.gpkg was opened {parent_opens} times via sqlite3.connect; expected ≤1"

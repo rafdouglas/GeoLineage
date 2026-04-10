@@ -2,7 +2,7 @@
 name=GeoLineage
 qgisMinimumVersion=3.34
 description=Track data lineage in GeoPackage files — records processing, edits, and exports automatically.
-version=0.6.3
+version=0.6.4
 author=RafDouglas C. Tommasi
 email=rafdouglas@exponential.engineering
 about=GeoLineage embeds lineage metadata directly inside GeoPackage files. Every processing step, manual edit, and file export is recorded in a _lineage table, creating a permanent chain of custody for geospatial data. The plugin intercepts QGIS processing operations, tracks manual edits, and detects exports — all without modifying existing data.
@@ -10,7 +10,8 @@ tracker=https://github.com/rafdouglas/GeoLineage/issues
 repository=https://github.com/rafdouglas/GeoLineage
 tags=geopackage,lineage,provenance,metadata,tracking
 homepage=https://github.com/rafdouglas/GeoLineage
-changelog=0.6.3 - Fix menu item text not updating when recording state changes
+changelog=0.6.4 - Fix ruff formatting and linting errors for CI
+    0.6.3 - Fix menu item text not updating when recording state changes
     0.6.2 - Fix pipeline reliability: single SQLite connection per file, correct checksum detection for raw_input files, cache and memory buffer hardening (15 TDD-driven fixes)
     0.6.1 - Fix edge wobble during drag (proportional y-interpolation), add Shift-constrained drag for axis locking
     0.6.0 - Drag-to-move nodes with real-time edge updates, right-click-drag pan, Reset Layout button

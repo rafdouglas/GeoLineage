@@ -725,6 +725,7 @@ class TestPerformance:
     def test_break_cycles_deep_chain_no_recursion_error(self):
         """A linear chain of 1100 nodes must not raise RecursionError."""
         import sys
+
         depth = sys.getrecursionlimit() + 100
         nodes = {str(i): _make_node(str(i), depth=i % 50) for i in range(depth)}
         edges = [LineageEdge(str(i), str(i + 1), i) for i in range(depth - 1)]
@@ -752,7 +753,7 @@ class TestPerformance:
             for n in range(n_per_rank):
                 parent = f"r{r}n{n}"
                 for offset in [0, 11, 23, 31]:
-                    child = f"r{r+1}n{(n_per_rank - 1 - n + offset) % n_per_rank}"
+                    child = f"r{r + 1}n{(n_per_rank - 1 - n + offset) % n_per_rank}"
                     edges.append(LineageEdge(parent, child, r * n_per_rank + n))
         graph = _make_graph(nodes, edges, root_path="r0n0")
         start = time.monotonic()
