@@ -567,3 +567,74 @@ class TestNestedParamsUnwrapping:
         hooks._record_processing_lineage("native:buffer", params, result)
 
         assert captured.get("parents") == []
+
+
+# --- Step 12: dynamic input-key discovery ---
+
+
+def test_get_input_keys_uses_algorithm_definitions():
+    """_get_input_keys must return keys derived from parameterDefinitions, not a hardcoded list."""
+    from unittest.mock import MagicMock, patch
+
+    from GeoLineage.lineage_core.hooks import _get_input_keys
+
+    mock_param = MagicMock()
+    mock_param.name.return_value = "CUSTOM_INPUT"
+    mock_param.__class__.__name__ = "QgsProcessingParameterVectorLayer"
+
+    mock_alg = MagicMock()
+    mock_alg.parameterDefinitions.return_value = [mock_param]
+
+    with patch("GeoLineage.lineage_core.hooks.QgsApplication") as mock_app:
+        mock_app.processingRegistry.return_value.algorithmById.return_value = mock_alg
+        keys = _get_input_keys("some:algorithm")
+
+    assert "CUSTOM_INPUT" in keys
+
+
+# --- Step 11: log warning when history_details absent ---
+
+
+def test_dialog_hook_warns_when_history_details_missing(caplog):
+    """Missing history_details must emit a WARNING, not silently drop parents."""
+    import logging
+
+    from GeoLineage.lineage_core.hooks import _extract_dialog_parameters
+
+    class FakeDialog:
+        pass  # no history_details attribute
+
+    with caplog.at_level(logging.WARNING, logger="GeoLineage"):
+        params = _extract_dialog_parameters(FakeDialog())
+
+    assert params == {}
+    assert any("history_details" in r.message for r in caplog.records)
+
+
+# --- Step 10: thread-safe _pending_edit_snapshots ---
+
+
+def test_pending_edit_snapshots_thread_safe():
+    """Concurrent writes/reads/pops on _pending_edit_snapshots must not raise."""
+    import threading
+
+    from GeoLineage.lineage_core import hooks
+
+    errors: list[Exception] = []
+
+    def writer(layer_id: str) -> None:
+        try:
+            for _ in range(1000):
+                hooks._pending_edit_snapshots[layer_id] = {"col": 1}
+                hooks._pending_edit_snapshots.get(layer_id)
+                hooks._pending_edit_snapshots.pop(layer_id, None)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(f"layer_{i}",)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Thread safety errors: {errors}"

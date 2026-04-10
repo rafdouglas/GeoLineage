@@ -79,8 +79,8 @@ class TestComputeLayoutSingleNode:
         pos = result.node_positions["/a.gpkg"]
         assert pos.layer == 0
         assert pos.order == 0
-        # Single node centered at x=0
-        assert pos.x == 0.0
+        # Single node: visual center (x + width/2) at x=0
+        assert pos.x + pos.width / 2 == 0.0
         assert pos.y == 0.0
 
 
@@ -214,6 +214,18 @@ class TestDummyNodeInsertion:
         result = compute_layout(graph)
         for key in result.node_positions:
             assert not key.startswith("__dummy__"), f"Dummy node {key} leaked into positions"
+
+    def test_dummy_node_not_confused_with_real_node(self):
+        """A real file path that starts with the dummy prefix must not be excluded from positions."""
+        suspicious_path = "__dummy__/real/file.gpkg"
+        nodes = {
+            "/root.gpkg": _make_node("/root.gpkg"),
+            suspicious_path: _make_node(suspicious_path),
+        }
+        edges = [LineageEdge("/root.gpkg", suspicious_path, 1)]
+        graph = _make_graph(nodes, edges, root_path="/root.gpkg")
+        result = compute_layout(graph)
+        assert suspicious_path in result.node_positions
 
 
 class TestCrossingMinimisation:
@@ -709,3 +721,70 @@ class TestPerformance:
 
         assert elapsed < 1.0, f"Layout took {elapsed:.3f}s, expected <1s"
         assert len(result.node_positions) == 50
+
+    def test_break_cycles_deep_chain_no_recursion_error(self):
+        """A linear chain of 1100 nodes must not raise RecursionError."""
+        import sys
+        depth = sys.getrecursionlimit() + 100
+        nodes = {str(i): _make_node(str(i), depth=i % 50) for i in range(depth)}
+        edges = [LineageEdge(str(i), str(i + 1), i) for i in range(depth - 1)]
+        graph = _make_graph(nodes, edges, root_path="0")
+        # Must complete without RecursionError
+        result = compute_layout(graph)
+        assert result is not None
+
+    def test_wide_graph_crossing_minimisation_under_two_seconds(self):
+        """Wide graph with many nodes per rank and cross-edges must complete in under 2 s.
+
+        Uses 10 ranks x 40 nodes = 400 nodes with shuffled cross-edges so that
+        _transpose has real pair-swap work to do (unlike a linear chain where
+        each rank has exactly 1 node and the inner loop never executes).
+        """
+        n_ranks, n_per_rank = 10, 40
+        nodes = {}
+        edges = []
+        for r in range(n_ranks):
+            for n in range(n_per_rank):
+                nid = f"r{r}n{n}"
+                nodes[nid] = _make_node(nid, depth=r)
+        # Reversed + offset connections create many crossings for transpose to resolve
+        for r in range(n_ranks - 1):
+            for n in range(n_per_rank):
+                parent = f"r{r}n{n}"
+                for offset in [0, 11, 23, 31]:
+                    child = f"r{r+1}n{(n_per_rank - 1 - n + offset) % n_per_rank}"
+                    edges.append(LineageEdge(parent, child, r * n_per_rank + n))
+        graph = _make_graph(nodes, edges, root_path="r0n0")
+        start = time.monotonic()
+        compute_layout(graph)
+        assert time.monotonic() - start < 2.0
+
+
+class TestCenteringByVisualCenter:
+    """Step 14: centering aligns visual midpoints (x + width/2), not left edges."""
+
+    def test_centering_uses_visual_center_not_left_edge(self):
+        """Single-node ranks with different widths must share the same visual center.
+
+        With parent width=200 and child width=50, centering by left-edge mean
+        puts both left-edges at x=0, giving parent_center=100 and child_center=25.
+        Centering by visual-center mean must put both visual centers at x=0.
+        """
+        nodes = {
+            "parent": _make_node("parent", depth=0),
+            "child": _make_node("child", depth=1),
+        }
+        edges = [LineageEdge("parent", "child", 1)]
+        graph = _make_graph(nodes, edges, root_path="parent")
+        node_widths = {"parent": 200.0, "child": 50.0}
+
+        result = compute_layout(graph, node_widths=node_widths)
+
+        p = result.node_positions["parent"]
+        c = result.node_positions["child"]
+        parent_center = p.x + p.width / 2
+        child_center = c.x + c.width / 2
+        assert abs(parent_center - child_center) < 1.0, (
+            f"Expected visual centers to align near x=0, "
+            f"got parent_center={parent_center:.1f}, child_center={child_center:.1f}"
+        )

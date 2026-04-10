@@ -17,6 +17,11 @@ from typing import Any
 from .memory_buffer import MemoryBuffer
 from .settings import LOGGER_NAME, SETTING_USERNAME
 
+try:
+    from qgis.core import QgsApplication
+except ImportError:
+    QgsApplication = None  # type: ignore[assignment,misc]
+
 logger = logging.getLogger(f"{LOGGER_NAME}.hooks")
 
 # Shared memory buffer for temporary layer lineage
@@ -38,6 +43,7 @@ _hook_state: dict[str, Any] = {
 # Per-layer edit snapshots: captured in beforeCommitChanges (before buffer is cleared),
 # consumed in afterCommitChanges (after commit succeeds).
 _pending_edit_snapshots: dict[str, dict[str, int]] = {}
+_edit_snapshots_lock = threading.Lock()
 
 
 def _get_created_by() -> str | None:
@@ -107,6 +113,36 @@ def _resolve_output_layer_definition(obj: Any) -> Any:
     return obj
 
 
+_FALLBACK_INPUT_KEYS = ("INPUT", "INPUT_LAYER", "LAYERS", "INPUT1", "INPUT2", "OVERLAY", "LAYER", "SOURCE_LAYER")
+
+_VECTOR_PARAM_TYPES = (
+    "QgsProcessingParameterVectorLayer",
+    "QgsProcessingParameterFeatureSource",
+    "QgsProcessingParameterMultipleLayers",
+)
+
+
+def _get_input_keys(algorithm_name: str) -> tuple[str, ...]:
+    """Return vector-input parameter names for the given algorithm.
+
+    Queries the QGIS processing registry when available; falls back to
+    the hardcoded tuple when outside QGIS or when the algorithm is unknown.
+    """
+    try:
+        if QgsApplication is None:
+            return _FALLBACK_INPUT_KEYS
+        alg = QgsApplication.processingRegistry().algorithmById(algorithm_name)
+        if alg is None:
+            return _FALLBACK_INPUT_KEYS
+        keys = tuple(
+            p.name() for p in alg.parameterDefinitions()
+            if type(p).__name__ in _VECTOR_PARAM_TYPES
+        )
+        return keys or _FALLBACK_INPUT_KEYS
+    except Exception:
+        return _FALLBACK_INPUT_KEYS
+
+
 def _extract_input_layer_ids(params: dict) -> list[str]:
     """Extract layer IDs from processing parameters.
 
@@ -114,10 +150,9 @@ def _extract_input_layer_ids(params: dict) -> list[str]:
     Handles both single layer and list-of-layers parameters.
     Returns a list of layer ID strings.
     """
-    input_keys = ("INPUT", "INPUT_LAYER", "LAYERS", "INPUT1", "INPUT2", "OVERLAY", "LAYER", "SOURCE_LAYER")
     ids: list[str] = []
 
-    for key in input_keys:
+    for key in _FALLBACK_INPUT_KEYS:
         value = params.get(key)
         if value is None:
             continue
@@ -262,7 +297,7 @@ def _record_processing_lineage(
     parent_metadata: list[dict] = []
     parent_checksums: dict[str, str] = {}
 
-    for key in ("INPUT", "INPUT_LAYER", "OVERLAY", "LAYER", "SOURCE_LAYER", "INPUT1", "INPUT2", "LAYERS"):
+    for key in _FALLBACK_INPUT_KEYS:
         value = params.get(key)
         if value is None:
             continue
@@ -464,6 +499,23 @@ def _uninstall_processing_hook() -> None:
     _hook_state["processing_wrapper"] = None
 
 
+def _extract_dialog_parameters(dialog_self: object) -> dict:
+    """Extract algorithm parameters from a dialog's history_details.
+
+    Returns an empty dict and emits a WARNING when history_details is absent,
+    so callers get a consistent type without silently dropping parent tracking.
+    """
+    history_details = getattr(dialog_self, "history_details", None)
+    if not history_details:
+        logger.warning(
+            "GeoLineage dialog hook: history_details missing on %s — "
+            "parent tracking will be empty for this algorithm run.",
+            type(dialog_self).__name__,
+        )
+        return {}
+    return history_details.get("parameters", {})
+
+
 def _install_dialog_hook() -> None:
     """Monkey-patch AlgorithmDialog.finish() for GUI-initiated algorithm runs.
 
@@ -490,8 +542,7 @@ def _install_dialog_hook() -> None:
                 return
 
             algorithm_name = dialog_self.algorithm().id()
-            # Recover input parameters from the history details stored during runAlgorithm()
-            params = getattr(dialog_self, "history_details", {}).get("parameters", {})
+            params = _extract_dialog_parameters(dialog_self)
 
             logger.info("Dialog hook fired: algorithm=%s, result_OUTPUT=%r", algorithm_name, result.get("OUTPUT"))
             _record_processing_lineage(algorithm_name, params, result)
@@ -713,14 +764,16 @@ def _connect_edit_signals(layer: Any) -> None:
     def _on_before_commit() -> None:
         """Snapshot edit buffer counts before the commit clears them."""
         try:
-            _pending_edit_snapshots[layer_id] = _build_edit_summary(layer)
+            with _edit_snapshots_lock:
+                _pending_edit_snapshots[layer_id] = _build_edit_summary(layer)
         except Exception:
             logger.exception("Failed to snapshot edit buffer")
 
     def _on_after_commit() -> None:
         """Record lineage using the pre-commit snapshot."""
         try:
-            snapshot = _pending_edit_snapshots.pop(layer_id, None)
+            with _edit_snapshots_lock:
+                snapshot = _pending_edit_snapshots.pop(layer_id, None)
             if snapshot and any(snapshot.values()):
                 _record_edit_lineage(layer, base_path, snapshot)
         except Exception:

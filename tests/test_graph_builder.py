@@ -314,6 +314,33 @@ class TestNodeStatus:
         a_abs = os.path.abspath(a)
         assert g.nodes[a_abs].status == "present"
 
+    def test_later_child_mismatch_flags_parent_modified(self, tmp_path):
+        """child_a records parent at v2; child_b records parent at v1 (stale).
+        BFS processes child_a first (v2 wins expected_checksums under first-write-wins),
+        but child_b's stale expectation (v1) must still trigger 'modified' on parent."""
+        parent = _make_gpkg(tmp_path, "parent.gpkg")
+        child_b = _make_gpkg(tmp_path, "child_b.gpkg")
+        child_a = _make_gpkg(tmp_path, "child_a.gpkg")
+        root = _make_gpkg(tmp_path, "root.gpkg")
+
+        # child_b records parent at v1
+        _link_parent(child_b, parent, "tool_b")
+
+        # Modify parent → v2
+        with sqlite3.connect(parent) as conn:
+            conn.execute("INSERT INTO points (id, name) VALUES (99, 'Modified')")
+
+        # child_a records parent at v2
+        _link_parent(child_a, parent, "tool_a")
+
+        # root links child_a first so BFS visits child_a before child_b
+        _link_parent(root, child_a, "tool_root")
+        _link_parent(root, child_b, "tool_root")
+
+        g = build_graph(root, str(tmp_path))
+        parent_abs = os.path.abspath(parent)
+        assert g.nodes[parent_abs].status == "modified"
+
 
 # ---------------------------------------------------------------------------
 # US-305: Depth limit and truncation
@@ -547,3 +574,33 @@ class TestEdgeCases:
         weird_path = os.path.join(str(tmp_path), ".", "a.gpkg")
         g = build_graph(weird_path, str(tmp_path))
         assert g.root_path == os.path.abspath(a)
+
+
+# ---------------------------------------------------------------------------
+# US-308: Single SQLite connection per file
+# ---------------------------------------------------------------------------
+
+
+class TestSingleConnectionPerFile:
+    """Step 15: build_graph opens at most one sqlite3 connection per file per traversal."""
+
+    def test_build_graph_opens_single_connection_per_file(self, tmp_path, monkeypatch):
+        """Each file visited during BFS must cause at most one sqlite3.connect call."""
+        parent_path = _make_gpkg(tmp_path, "parent.gpkg")
+        child_path = _make_gpkg(tmp_path, "child.gpkg")
+        _link_parent(child_path, parent_path)
+
+        connect_calls: list[str] = []
+        original_connect = sqlite3.connect
+
+        def counting_connect(path, *args, **kwargs):
+            connect_calls.append(str(path))
+            return original_connect(path, *args, **kwargs)
+
+        monkeypatch.setattr(sqlite3, "connect", counting_connect)
+        build_graph(child_path, str(tmp_path))
+
+        parent_opens = connect_calls.count(parent_path)
+        assert parent_opens <= 1, (
+            f"parent.gpkg was opened {parent_opens} times via sqlite3.connect; expected ≤1"
+        )

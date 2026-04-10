@@ -196,34 +196,44 @@ def _break_cycles(
     if not roots:
         roots = sorted(all_nodes)
 
-    def dfs(node: str) -> None:
-        visited.add(node)
-        in_stack.add(node)
-        for child in list(ac[node]):
-            if child in in_stack:
-                # Back edge — reverse it
-                logger.warning(
-                    "Cycle detected: back-edge %s -> %s reversed for layout",
-                    node,
-                    child,
-                )
-                reversed_edges.add((node, child))
-                ac[node].remove(child)
-                ap[child].remove(node)
-                ac[child].append(node)
-                ap[node].append(child)
-            elif child not in visited:
-                dfs(child)
-        in_stack.discard(node)
+    def _iterative_dfs(start: str) -> None:
+        stack: list[tuple[str, list[str]]] = [(start, list(ac[start]))]
+        in_stack.add(start)
+        visited.add(start)
+        while stack:
+            node, children = stack[-1]
+            if children:
+                child = children.pop(0)
+                if child in in_stack:
+                    # Back edge — reverse it
+                    logger.warning(
+                        "Cycle detected: back-edge %s -> %s reversed for layout",
+                        node,
+                        child,
+                    )
+                    reversed_edges.add((node, child))
+                    if child in ac[node]:
+                        ac[node].remove(child)
+                    if node in ap[child]:
+                        ap[child].remove(node)
+                    ac[child].append(node)
+                    ap[node].append(child)
+                elif child not in visited:
+                    visited.add(child)
+                    in_stack.add(child)
+                    stack.append((child, list(ac[child])))
+            else:
+                in_stack.discard(node)
+                stack.pop()
 
     for root in roots:
         if root not in visited:
-            dfs(root)
+            _iterative_dfs(root)
 
     # Visit any remaining unvisited nodes (disconnected components)
     for node in sorted(all_nodes):
         if node not in visited:
-            dfs(node)
+            _iterative_dfs(node)
 
     return ac, ap, reversed_edges
 
@@ -405,28 +415,38 @@ def _transpose(
 
     Modifies *result* in place.  Converges quickly (typically 1-3 passes).
     """
+    rank_index = {rank: idx for idx, rank in enumerate(sorted_ranks)}
     improved = True
     while improved:
         improved = False
         for rank in sorted_ranks:
             nodes = result[rank]
+            rank_idx = rank_index[rank]
+
+            # Hoist neighbour-order dicts outside the inner pair loop — same
+            # adjacent ranks for every pair within this rank.
+            above_order: dict[str, int] = {}
+            if rank_idx > 0:
+                above_rank = sorted_ranks[rank_idx - 1]
+                above_order = {n: idx for idx, n in enumerate(result[above_rank])}
+
+            below_order: dict[str, int] = {}
+            if rank_idx < len(sorted_ranks) - 1:
+                below_rank = sorted_ranks[rank_idx + 1]
+                below_order = {n: idx for idx, n in enumerate(result[below_rank])}
+
             for i in range(len(nodes) - 1):
                 u, v = nodes[i], nodes[i + 1]
                 cross_before = 0
                 cross_after = 0
 
                 # Check against rank above (use parents_map)
-                rank_idx = sorted_ranks.index(rank)
-                if rank_idx > 0:
-                    above_rank = sorted_ranks[rank_idx - 1]
-                    above_order = {n: idx for idx, n in enumerate(result[above_rank])}
+                if above_order:
                     cross_before += _count_crossings_between_pair(u, v, above_order, parents_map)
                     cross_after += _count_crossings_between_pair(v, u, above_order, parents_map)
 
                 # Check against rank below (use children_map)
-                if rank_idx < len(sorted_ranks) - 1:
-                    below_rank = sorted_ranks[rank_idx + 1]
-                    below_order = {n: idx for idx, n in enumerate(result[below_rank])}
+                if below_order:
                     cross_before += _count_crossings_between_pair(u, v, below_order, children_map)
                     cross_after += _count_crossings_between_pair(v, u, below_order, children_map)
 
@@ -467,11 +487,11 @@ def _assign_x_coordinates(
             widths.append(w)
             x_cursor += w + config.horizontal_gap
 
-        # Center the rank so the mean x-position of all node left-edges
-        # matches the old behavior: ``(order - (n-1)/2) * cell_width``.
-        # For uniform widths this produces identical coordinates.
-        mean_x = sum(node_xs) / n
-        offset = -mean_x
+        # Center the rank by aligning the mean visual center (x + width/2) to x=0.
+        # This ensures that ranks with different node widths share the same
+        # visual midpoint, rather than the same left-edge mean.
+        mean_center = sum(node_xs[i] + widths[i] / 2 for i in range(n)) / n
+        offset = -mean_center
 
         y = rank * cell_height
         for i, node_id in enumerate(nodes):

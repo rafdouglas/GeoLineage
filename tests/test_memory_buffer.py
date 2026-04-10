@@ -202,6 +202,69 @@ def test_discard_removes_from_links():
 
 
 # ---------------------------------------------------------------------------
+# 11. test_flush_does_not_cleanup_on_record_failure
+# ---------------------------------------------------------------------------
+
+
+def test_flush_does_not_cleanup_on_record_failure(tmp_path):
+    """If record_processing raises, the chain must survive in the buffer."""
+    buf = MemoryBuffer()
+    a_id = "layer_a"
+    b_id = "layer_b"
+    buf.add(a_id, _make_entry("a", "native:buffer"))
+    buf.add(b_id, _make_entry("b", "native:clip"))
+    buf.link(b_id, [a_id])
+
+    def failing_record(*args, **kwargs):
+        raise IOError("simulated disk error")
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(
+            "GeoLineage.lineage_core.memory_buffer.record_processing", failing_record
+        )
+        with pytest.raises(IOError):
+            buf.flush(b_id, str(tmp_path / "out.gpkg"))
+
+    # Chain must still be in the buffer after the failure
+    assert buf.get_chain(b_id) != []
+    assert buf.get_chain(a_id) != []
+
+
+# ---------------------------------------------------------------------------
+# 12. test_cleanup_removes_back_references_from_links
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_removes_back_references_from_links(tmp_path):
+    """After flushing B's chain (B→A), node C's parent list must not contain A.
+
+    The bug: _cleanup_chain removes A from _entries and _links but leaves A
+    as a listed parent inside C's link entry — a dangling back-reference.
+    """
+    buf = MemoryBuffer()
+    a_id = "layer_a"
+    b_id = "layer_b"
+    c_id = "layer_c"
+    buf.add(a_id, _make_entry("a", "native:buffer"))
+    buf.add(b_id, _make_entry("b", "native:clip"))
+    buf.add(c_id, _make_entry("c", "native:dissolve"))
+    buf.link(b_id, [a_id])  # B→A
+    buf.link(c_id, [a_id])  # C→A (both B and C depend on A)
+
+    # Flush B's chain — cleans up B and A, but C still has A in its parent list
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(
+            "GeoLineage.lineage_core.memory_buffer.record_processing",
+            lambda *a, **k: None,
+        )
+        buf.flush(b_id, str(tmp_path / "out.gpkg"))
+
+    # A was removed from the buffer — no _links entry must still reference it
+    for parents in buf._links.values():
+        assert a_id not in parents
+
+
+# ---------------------------------------------------------------------------
 # 10. test_flush_cleans_up
 # ---------------------------------------------------------------------------
 

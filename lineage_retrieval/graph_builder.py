@@ -8,8 +8,11 @@ import sqlite3
 from collections import deque
 from dataclasses import dataclass
 
-from ..lineage_core.checksum import compute_checksum
-from ..lineage_core.schema import get_schema_version, read_lineage_rows
+from ..lineage_core.checksum import compute_checksum_via_conn
+from ..lineage_core.schema import (
+    get_schema_version_via_conn,
+    read_lineage_rows_via_conn,
+)
 from ..lineage_core.settings import LOGGER_NAME
 from .cache import LineageCache
 from .path_resolver import resolve
@@ -44,14 +47,15 @@ class LineageGraph:
 def _read_file_data(
     path: str,
     cache: LineageCache | None,
-) -> tuple[str, list[dict]]:
-    """Read lineage data from a GeoPackage file.
+) -> tuple[str, list[dict], str | None]:
+    """Read lineage data from a GeoPackage file using a single SQLite connection.
 
-    Returns (status, entries) where status is one of:
+    Returns (status, entries, checksum) where status is one of:
     'present', 'raw_input', 'missing', 'busy'
+    and checksum is the computed data checksum (None for non-present files).
     """
     if not os.path.isfile(path):
-        return ("missing", [])
+        return ("missing", [], None)
 
     if cache is not None:
         cached = cache.get(path)
@@ -62,17 +66,18 @@ def _read_file_data(
         conn = sqlite3.connect(path, timeout=2.0)
         conn.execute("PRAGMA query_only = ON")
     except sqlite3.OperationalError:
-        return ("busy", [])
+        return ("busy", [], None)
 
     try:
-        version = get_schema_version(path)
+        checksum = compute_checksum_via_conn(conn)
+        version = get_schema_version_via_conn(conn)
         if version is None:
-            result = ("raw_input", [])
+            result = ("raw_input", [], checksum)
         else:
-            rows = read_lineage_rows(path)
-            result = ("present", rows)
+            rows = read_lineage_rows_via_conn(conn)
+            result = ("present", rows, checksum)
     except sqlite3.OperationalError:
-        result = ("raw_input", [])
+        result = ("raw_input", [], None)
     finally:
         conn.close()
 
@@ -96,6 +101,8 @@ def build_graph(
     visited: set[str] = set()
     # path -> expected checksum (recorded by a child that used this file as parent)
     expected_checksums: dict[str, str] = {}
+    # paths where two or more children disagree on the expected checksum → always "modified"
+    force_modified: set[str] = set()
 
     queue: deque[tuple[str, int]] = deque([(start_path, 0)])
 
@@ -106,7 +113,7 @@ def build_graph(
             continue
         visited.add(path)
 
-        status, entries = _read_file_data(path, cache)
+        status, entries, actual_checksum = _read_file_data(path, cache)
 
         if status in ("missing", "busy"):
             nodes[path] = LineageNode(
@@ -120,12 +127,12 @@ def build_graph(
             continue
 
         # Determine final status: checksum comparison can override base status
-        if path in expected_checksums:
-            try:
-                actual = compute_checksum(path)
-                node_status = "modified" if actual != expected_checksums[path] else status
-            except Exception:
-                logger.debug("Could not compute checksum for %s", path)
+        if path in force_modified:
+            node_status = "modified"
+        elif path in expected_checksums:
+            if actual_checksum is not None:
+                node_status = "modified" if actual_checksum != expected_checksums[path] else status
+            else:
                 node_status = status
         else:
             node_status = status
@@ -154,8 +161,12 @@ def build_graph(
                 parent_refs.append((parent_ref, entry_id))
                 if parent_ref in stored_checksums:
                     resolved_parent, _ = resolve(parent_ref, project_dir)
+                    recorded = stored_checksums[parent_ref]
                     if resolved_parent not in expected_checksums:
-                        expected_checksums[resolved_parent] = stored_checksums[parent_ref]
+                        expected_checksums[resolved_parent] = recorded
+                    elif expected_checksums[resolved_parent] != recorded:
+                        # Two children disagree on expected checksum → parent was modified
+                        force_modified.add(resolved_parent)
 
         # Determine if truncated (has parents but at max_depth)
         has_parents = len(parent_refs) > 0

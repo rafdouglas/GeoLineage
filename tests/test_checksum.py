@@ -178,6 +178,72 @@ def test_type_tag_differentiation(tmp_path):
     assert compute_checksum(str(path_zero)) != compute_checksum(str(path_null))
 
 
+def test_value_length_delimiter_prevents_collision(tmp_path):
+    """Values ending with a type-tag byte must not collide with the next column.
+
+    Without a length prefix, ("a\\x03", "") and ("a", "\\x03") produce the
+    identical byte stream \x03a\x03 | \x03 vs \x03a | \x03\x03 — both are
+    \x03a\x03\x03 — causing a hash collision.  The length prefix makes them
+    distinct: 3+\x03a\x03 | 1+\x03 vs 2+\x03a | 2+\x03\x03.
+    """
+    etx = chr(3)  # U+0003 — same byte value as the TEXT type tag \x03
+
+    def _build(name, col1, col2):
+        path = tmp_path / name
+        conn = _make_gpkg(path)
+        conn.execute("CREATE TABLE data (id INTEGER PRIMARY KEY, col1 TEXT, col2 TEXT)")
+        _register_table(conn, "data")
+        conn.execute("INSERT INTO data VALUES (1, ?, ?)", (col1, col2))
+        conn.commit()
+        conn.close()
+        return path
+
+    path_a = _build("a.gpkg", f"a{etx}", "")   # col1 ends with type-tag byte
+    path_b = _build("b.gpkg", "a", etx)         # col2 starts with type-tag byte
+
+    assert compute_checksum(str(path_a)) != compute_checksum(str(path_b))
+
+
+def test_rowid_vacuum_stability(tmp_path):
+    """Checksum must be identical before and after VACUUM."""
+    db = tmp_path / "v.gpkg"
+    conn = _make_gpkg(db)
+    _register_table(conn, "data")
+    conn.execute("CREATE TABLE data (id INTEGER PRIMARY KEY, val TEXT)")
+    conn.execute("INSERT INTO data VALUES (1, 'alpha')")
+    conn.execute("INSERT INTO data VALUES (2, 'beta')")
+    conn.commit()
+    checksum_before = compute_checksum(str(db))
+    conn.execute("VACUUM")
+    conn.commit()
+    conn.close()
+    assert compute_checksum(str(db)) == checksum_before
+
+
+def test_row_order_by_pk_not_rowid(tmp_path):
+    """Rows inserted out of TEXT-PK order must hash the same as in-order insertion.
+
+    INTEGER PRIMARY KEY is a rowid alias, so ORDER BY rowid == ORDER BY id.
+    TEXT PKs expose the real bug: rowid tracks insertion order, not PK order.
+    """
+    db1 = tmp_path / "ordered.gpkg"
+    db2 = tmp_path / "unordered.gpkg"
+
+    for db, rows in [
+        (db1, [("alpha", "x"), ("beta", "y")]),
+        (db2, [("beta", "y"), ("alpha", "x")]),  # reversed insertion order
+    ]:
+        conn = _make_gpkg(db)
+        _register_table(conn, "data")
+        conn.execute("CREATE TABLE data (code TEXT PRIMARY KEY, val TEXT)")
+        for row in rows:
+            conn.execute("INSERT INTO data VALUES (?, ?)", row)
+        conn.commit()
+        conn.close()
+
+    assert compute_checksum(str(db1)) == compute_checksum(str(db2))
+
+
 def test_column_order_deterministic(tmp_path):
     """Checksum uses PRAGMA cid order, producing a stable result on repeated calls."""
     path = tmp_path / "det.gpkg"

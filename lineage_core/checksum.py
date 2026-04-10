@@ -35,6 +35,42 @@ def _serialize_value(value) -> bytes:
         raise TypeError(f"Unsupported SQLite type: {type(value)}")
 
 
+def compute_checksum_via_conn(conn: sqlite3.Connection) -> str:
+    """Compute a data-only SHA-256 checksum using an existing SQLite connection.
+
+    See compute_checksum for the full algorithm description.
+    """
+    h = hashlib.sha256()
+    cursor = conn.execute("SELECT table_name FROM gpkg_contents ORDER BY table_name ASC")
+    tables = [row[0] for row in cursor.fetchall() if row[0] not in _EXCLUDED_TABLES]
+
+    for table_name in tables:
+        h.update(table_name.encode("utf-8"))
+
+        col_info = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+        col_names = [info[1] for info in sorted(col_info, key=lambda x: x[0])]
+
+        pk_cols = [
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info('{table_name}')")
+            if row[5] > 0
+        ]
+        order_clause = ", ".join(f'"{c}"' for c in pk_cols) if pk_cols else "rowid"
+        cols_sql = ", ".join(f'"{c}"' for c in col_names)
+        rows = conn.execute(  # noqa: S608  # nosec B608
+            f'SELECT {cols_sql} FROM "{table_name}" ORDER BY {order_clause} ASC'
+        ).fetchall()
+
+        for row in rows:
+            for value in row:
+                value_bytes = _serialize_value(value)
+                h.update(len(value_bytes).to_bytes(4, "little"))
+                h.update(value_bytes)
+            h.update(_ROW_SENTINEL)
+
+    return h.hexdigest()
+
+
 def compute_checksum(gpkg_path: str) -> str:
     """Compute a data-only SHA-256 checksum of a GeoPackage file.
 
@@ -63,13 +99,24 @@ def compute_checksum(gpkg_path: str) -> str:
             col_info = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
             col_names = [info[1] for info in sorted(col_info, key=lambda x: x[0])]
 
-            # Read all rows in rowid order
+            # Read all rows ordered by primary key columns (stable across VACUUM/re-insert).
+            # Falls back to rowid for tables with no explicit PK (e.g. views).
+            pk_cols = [
+                row[1]
+                for row in conn.execute(f"PRAGMA table_info('{table_name}')")
+                if row[5] > 0  # column's pk index > 0 means it participates in the PK
+            ]
+            order_clause = ", ".join(f'"{c}"' for c in pk_cols) if pk_cols else "rowid"
             cols_sql = ", ".join(f'"{c}"' for c in col_names)
-            rows = conn.execute(f'SELECT {cols_sql} FROM "{table_name}" ORDER BY rowid ASC').fetchall()  # noqa: S608  # nosec B608
+            rows = conn.execute(  # noqa: S608  # nosec B608
+                f'SELECT {cols_sql} FROM "{table_name}" ORDER BY {order_clause} ASC'
+            ).fetchall()
 
             for row in rows:
                 for value in row:
-                    h.update(_serialize_value(value))
+                    value_bytes = _serialize_value(value)
+                    h.update(len(value_bytes).to_bytes(4, "little"))
+                    h.update(value_bytes)
                 h.update(_ROW_SENTINEL)
 
     return h.hexdigest()

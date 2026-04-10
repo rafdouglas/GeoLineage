@@ -64,8 +64,16 @@ def get_schema_version(db_path: str) -> str | None:
     """Read schema version from _lineage_meta. Returns None if table doesn't exist."""
     try:
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute(f"SELECT value FROM {META_TABLE} WHERE key = 'schema_version'").fetchone()  # noqa: S608  # nosec B608
-            return row[0] if row else None
+            return get_schema_version_via_conn(conn)
+    except sqlite3.OperationalError:
+        return None
+
+
+def get_schema_version_via_conn(conn: sqlite3.Connection) -> str | None:
+    """Read schema version using an existing connection. Returns None if table doesn't exist."""
+    try:
+        row = conn.execute(f"SELECT value FROM {META_TABLE} WHERE key = 'schema_version'").fetchone()  # noqa: S608  # nosec B608
+        return row[0] if row else None
     except sqlite3.OperationalError:
         return None
 
@@ -79,14 +87,22 @@ def read_lineage_rows(db_path: str) -> list[dict]:
     created_at, created_by, entry_type, edit_summary, qgis_sketcher
     """
     with sqlite3.connect(db_path) as conn:
-        pragma_rows = conn.execute(f"PRAGMA table_info({LINEAGE_TABLE})").fetchall()
-        actual_columns = {row[1] for row in pragma_rows}
-        select_columns = sorted(actual_columns & KNOWN_COLUMNS)
+        return read_lineage_rows_via_conn(conn)
 
-        if not select_columns:
-            return []
 
-        cols_sql = ", ".join(select_columns)
-        rows = conn.execute(f"SELECT {cols_sql} FROM {LINEAGE_TABLE}").fetchall()  # noqa: S608  # nosec B608
+def read_lineage_rows_via_conn(conn: sqlite3.Connection) -> list[dict]:
+    """Read all rows from _lineage table using an existing connection.
 
-        return [dict(zip(select_columns, row, strict=False)) for row in rows]
+    Silently drops unknown keys (forward compatibility).
+    """
+    pragma_rows = conn.execute(f"PRAGMA table_info({LINEAGE_TABLE})").fetchall()
+    actual_columns = {row[1] for row in pragma_rows}
+    select_columns = sorted(actual_columns & KNOWN_COLUMNS)
+
+    if not select_columns:
+        return []
+
+    cols_sql = ", ".join(select_columns)
+    rows = conn.execute(f"SELECT {cols_sql} FROM {LINEAGE_TABLE}").fetchall()  # noqa: S608  # nosec B608
+
+    return [dict(zip(select_columns, row, strict=False)) for row in rows]
