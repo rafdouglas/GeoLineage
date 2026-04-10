@@ -270,6 +270,8 @@ class GeoLineagePlugin:
         if self.toggle_action:
             self.toggle_action.setIcon(QIcon(os.path.join(icon_path, icon_file)))
             if enabled:
+                self.toggle_action.setText("GeoLineage is recording. Click to pause.")
                 self.toggle_action.setToolTip("GeoLineage is currently recording. Click to pause.")
             else:
+                self.toggle_action.setText("GeoLineage is currently not recording. Click to start recording.")
                 self.toggle_action.setToolTip("GeoLineage is currently not recording. Click to start recording.")
