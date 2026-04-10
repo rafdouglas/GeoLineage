@@ -216,7 +216,7 @@ def test_flush_does_not_cleanup_on_record_failure(tmp_path):
     buf.link(b_id, [a_id])
 
     def failing_record(*args, **kwargs):
-        raise IOError("simulated disk error")
+        raise OSError("simulated disk error")
 
     with pytest.MonkeyPatch().context() as mp:
         mp.setattr(

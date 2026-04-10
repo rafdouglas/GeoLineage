@@ -1,3 +1,4 @@
+import contextlib
 import logging
 
 from .recorder import record_processing
@@ -134,8 +135,6 @@ class MemoryBuffer:
             self._entries.pop(node_id, None)
             # Remove this node as a parent reference from all remaining link lists
             for remaining_parents in self._links.values():
-                try:
+                with contextlib.suppress(ValueError):
                     remaining_parents.remove(node_id)
-                except ValueError:
-                    pass
             self._links.pop(node_id, None)
