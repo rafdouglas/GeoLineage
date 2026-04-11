@@ -247,10 +247,17 @@ class TestMultiGpkgInspectDialog:
         source = _INSPECT_DIALOG_PATH.read_text()
         assert "self._gpkg_path" not in source
 
-    def test_uses_pathlib_glob_non_recursive(self):
-        """Verify non-recursive glob('*.gpkg') is used."""
+    def test_scopes_to_loaded_layers_not_folder_glob(self):
+        """Verify the dialog enumerates loaded layers rather than globbing the project folder.
+
+        Regression guard for the scope fix in .claude/plans/fix-manage-lineage-dialog.md Phase 2:
+        the old implementation globbed '*.gpkg' in the project directory and showed unrelated
+        files while missing loaded GeoPackages outside the project folder.
+        """
         source = _INSPECT_DIALOG_PATH.read_text()
-        assert '.glob("*.gpkg")' in source or ".glob('*.gpkg')" in source
+        assert ".glob(" not in source, "InspectDialog must not glob the project directory"
+        assert "mapLayers" in source, "InspectDialog must enumerate QgsProject mapLayers"
+        assert "extract_gpkg_path" in source, "InspectDialog must use extract_gpkg_path helper"
 
     def test_uses_userrole_for_gpkg_path(self):
         """Verify UserRole is used to store per-row gpkg_path."""
@@ -305,11 +312,21 @@ class TestPluginManageDialog:
         assert "activeLayer" not in method_source
         assert "extract_gpkg_path" not in method_source
 
-    def test_uses_project_dir_only(self):
+    def test_passes_iface_and_project_dir_to_dialog(self):
+        """Verify plugin.py passes iface + project_dir to InspectDialog.
+
+        After the scope fix, _show_manage_dialog must pass the QGIS iface so the dialog
+        can enumerate loaded layers, and must no longer gate on a saved project (unsaved
+        projects can still have loaded GeoPackages).
+        """
         plugin_path = pathlib.Path(__file__).parent.parent / "plugin.py"
         source = plugin_path.read_text()
         method_start = source.index("def _show_manage_dialog")
         method_end = source.index("\n    def ", method_start + 1)
         method_source = source[method_start:method_end]
         assert "homePath" in method_source
-        assert "InspectDialog(project_dir" in method_source
+        assert "InspectDialog(" in method_source
+        assert "self.iface" in method_source, "plugin must pass iface to InspectDialog"
+        assert "Save the project first" not in method_source, (
+            "plugin must no longer block Manage Lineage on an unsaved project"
+        )

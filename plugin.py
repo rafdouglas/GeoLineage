@@ -241,17 +241,18 @@ class GeoLineagePlugin:
         self.dock_widget.show()
 
     def _show_manage_dialog(self) -> None:
-        """Open InspectDialog for all GeoPackages in the project directory."""
+        """Open Manage Lineage dialog for GeoPackages loaded in the current project."""
         from qgis.core import QgsProject
 
         from .lineage_manager.inspect_dialog import InspectDialog
 
-        project_dir = QgsProject.instance().homePath()
-        if not project_dir:
-            self.iface.messageBar().pushWarning("GeoLineage", "Save the project first.")
-            return
-
-        dlg = InspectDialog(project_dir, dock_widget=self.dock_widget, parent=self.iface.mainWindow())
+        project_dir = QgsProject.instance().homePath() or ""
+        dlg = InspectDialog(
+            self.iface,
+            project_dir=project_dir,
+            dock_widget=self.dock_widget,
+            parent=self.iface.mainWindow(),
+        )
         dlg.exec_()
 
     def _show_settings_dialog(self) -> None:

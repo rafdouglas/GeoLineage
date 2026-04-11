@@ -1,4 +1,4 @@
-"""Inspect dialog — table view of all _lineage entries for a GeoPackage."""
+"""Manage Lineage dialog — table view of _lineage entries for loaded GeoPackages."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 import os
 
 from ..lineage_core.settings import LOGGER_NAME
+from ..lineage_retrieval.path_resolver import extract_gpkg_path
 
 logger = logging.getLogger(f"{LOGGER_NAME}.inspect_dialog")
 
@@ -20,8 +21,29 @@ def _get_base_class():
         return object
 
 
+def _collect_loaded_gpkg_paths(layer_sources: list[str]) -> list[str]:
+    """Collect deduped absolute GeoPackage paths from QGIS layer source URIs.
+
+    Shared by _load_entries() and the unit tests. Pure Python — no QGIS dependency.
+    """
+    gpkg_paths: list[str] = []
+    seen: set[str] = set()
+    for source in layer_sources:
+        if not isinstance(source, str):
+            continue
+        path = extract_gpkg_path(source)
+        if not path:
+            continue
+        abs_path = os.path.abspath(path)
+        if abs_path in seen:
+            continue
+        seen.add(abs_path)
+        gpkg_paths.append(abs_path)
+    return gpkg_paths
+
+
 class InspectDialog(_get_base_class()):
-    """Table view of all lineage entries for a selected GeoPackage.
+    """Table view of all lineage entries for GeoPackages loaded in the project.
 
     Inherits from QDialog at runtime.
     """
@@ -43,16 +65,19 @@ class InspectDialog(_get_base_class()):
     ) = range(len(_COLUMNS))
     _EDITABLE_COLS = {_COL_SUMMARY: "operation_summary", _COL_EDIT_SUMMARY: "edit_summary"}
 
-    def __init__(self, project_dir: str, dock_widget=None, parent=None) -> None:
+    def __init__(self, iface, project_dir: str = "", dock_widget=None, parent=None) -> None:
+        from qgis.core import QgsProject
         from qgis.PyQt.QtCore import Qt
         from qgis.PyQt.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout
 
         super().__init__(parent)
-        self._project_dir = project_dir
+        self._iface = iface
+        self._project_dir = project_dir or ""
         self._dock_widget = dock_widget
         self._updating = False
 
-        self.setWindowTitle(f"Inspect Lineage: {os.path.basename(self._project_dir)}")
+        project_name = QgsProject.instance().baseName() or "unsaved project"
+        self.setWindowTitle(f"Manage Lineage — {project_name}")
         self.setMinimumSize(800, 400)
         self.setAttribute(Qt.WA_DeleteOnClose)
 
@@ -109,6 +134,17 @@ class InspectDialog(_get_base_class()):
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         parent_layout.addWidget(self._table)
 
+    def _gather_loaded_gpkg_paths(self) -> list[str]:
+        """Enumerate GeoPackages backing layers loaded in the current QGIS project."""
+        from qgis.core import QgsProject
+
+        sources: list[str] = []
+        for layer in QgsProject.instance().mapLayers().values():
+            source = layer.source() if hasattr(layer, "source") else None
+            if isinstance(source, str):
+                sources.append(source)
+        return _collect_loaded_gpkg_paths(sources)
+
     def _load_entries(self) -> None:
         import pathlib
 
@@ -117,47 +153,53 @@ class InspectDialog(_get_base_class()):
 
         from ..lineage_manager.data_ops import read_all_entries
 
+        # Qt gotcha: QTableWidget re-sorts after every setItem() while sorting is
+        # enabled, scrambling row indices during bulk populate and leaving later
+        # columns on wrong rows. Disable sorting around the populate loop.
         self._updating = True
-        self._table.setRowCount(0)
+        self._table.setSortingEnabled(False)
+        try:
+            self._table.setRowCount(0)
 
-        gpkg_files = sorted(pathlib.Path(self._project_dir).glob("*.gpkg"))
+            gpkg_paths = self._gather_loaded_gpkg_paths()
 
-        all_rows: list[tuple[str, dict]] = []
-        for gpkg_file in gpkg_files:
-            try:
-                entries = read_all_entries(str(gpkg_file))
-                for entry in entries:
-                    all_rows.append((str(gpkg_file), entry))
-            except Exception:
-                logger.exception("Failed to read entries from %s", gpkg_file)
+            all_rows: list[tuple[str, dict]] = []
+            for gpkg_path in gpkg_paths:
+                try:
+                    entries = read_all_entries(gpkg_path)
+                    for entry in entries:
+                        all_rows.append((gpkg_path, entry))
+                except Exception:
+                    logger.exception("Failed to read entries from %s", gpkg_path)
 
-        self._table.setRowCount(len(all_rows))
+            self._table.setRowCount(len(all_rows))
 
-        for row, (gpkg_path, entry) in enumerate(all_rows):
-            file_item = QTableWidgetItem(pathlib.Path(gpkg_path).name)
-            file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
-            file_item.setData(Qt.UserRole, gpkg_path)
-            self._table.setItem(row, self._COL_FILE, file_item)
+            for row, (gpkg_path, entry) in enumerate(all_rows):
+                file_item = QTableWidgetItem(pathlib.Path(gpkg_path).name)
+                file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
+                file_item.setData(Qt.UserRole, gpkg_path)
+                self._table.setItem(row, self._COL_FILE, file_item)
 
-            items = [
-                (self._COL_ID, str(entry.get("id", ""))),
-                (self._COL_LAYER, entry.get("layer_name", "")),
-                (self._COL_TYPE, entry.get("entry_type", "")),
-                (self._COL_TOOL, entry.get("operation_tool", "") or ""),
-                (self._COL_USER, entry.get("created_by", "") or ""),
-                (self._COL_SUMMARY, entry.get("operation_summary", "")),
-                (self._COL_EDIT_SUMMARY, entry.get("edit_summary", "") or ""),
-                (self._COL_TIME, entry.get("created_at", "")),
-                (self._COL_PARAMS, entry.get("operation_params", "") or ""),
-                (self._COL_PARENTS, entry.get("parent_files", "") or ""),
-            ]
-            for col, text in items:
-                item = QTableWidgetItem(str(text))
-                if col not in self._EDITABLE_COLS:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                self._table.setItem(row, col, item)
-
-        self._updating = False
+                items = [
+                    (self._COL_ID, str(entry.get("id", ""))),
+                    (self._COL_LAYER, entry.get("layer_name", "")),
+                    (self._COL_TYPE, entry.get("entry_type", "")),
+                    (self._COL_TOOL, entry.get("operation_tool", "") or ""),
+                    (self._COL_USER, entry.get("created_by", "") or ""),
+                    (self._COL_SUMMARY, entry.get("operation_summary", "")),
+                    (self._COL_EDIT_SUMMARY, entry.get("edit_summary", "") or ""),
+                    (self._COL_TIME, entry.get("created_at", "")),
+                    (self._COL_PARAMS, entry.get("operation_params", "") or ""),
+                    (self._COL_PARENTS, entry.get("parent_files", "") or ""),
+                ]
+                for col, text in items:
+                    item = QTableWidgetItem(str(text))
+                    if col not in self._EDITABLE_COLS:
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    self._table.setItem(row, col, item)
+        finally:
+            self._table.setSortingEnabled(True)
+            self._updating = False
 
     def _get_row_gpkg_path(self, row: int) -> str | None:
         """Extract gpkg_path from the File column's UserRole data."""
@@ -234,6 +276,12 @@ class InspectDialog(_get_base_class()):
             return
         gpkg_path = self._get_row_gpkg_path(row)
         if gpkg_path is None:
+            return
+        if not self._project_dir:
+            if self._iface is not None:
+                self._iface.messageBar().pushWarning(
+                    "GeoLineage", "Save the project first to relink parent paths."
+                )
             return
         dlg = RelinkDialog(gpkg_path, self._project_dir, self)
         dlg.exec_()
