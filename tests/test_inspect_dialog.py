@@ -135,9 +135,7 @@ class TestSortingEnabledPopulateGuard:
         assert load_entries is not None, "_load_entries method must exist"
 
         calls = _find_setSortingEnabled_calls(load_entries)
-        false_calls = [
-            c for c in calls if c.args and isinstance(c.args[0], ast.Constant) and c.args[0].value is False
-        ]
+        false_calls = [c for c in calls if c.args and isinstance(c.args[0], ast.Constant) and c.args[0].value is False]
         assert false_calls, (
             "_load_entries must call self._table.setSortingEnabled(False) before populating rows. "
             "Without this, Qt resorts after every setItem() and columns land on wrong rows "
@@ -150,9 +148,7 @@ class TestSortingEnabledPopulateGuard:
         assert load_entries is not None
 
         calls = _find_setSortingEnabled_calls(load_entries)
-        true_calls = [
-            c for c in calls if c.args and isinstance(c.args[0], ast.Constant) and c.args[0].value is True
-        ]
+        true_calls = [c for c in calls if c.args and isinstance(c.args[0], ast.Constant) and c.args[0].value is True]
         assert true_calls, "_load_entries must re-enable sorting after populating rows"
 
     def test_load_entries_wraps_populate_in_try_finally(self):
@@ -177,9 +173,7 @@ class TestSortingEnabledPopulateGuard:
                         and call.args[0].value is True
                     ):
                         reenables_in_finally = True
-        assert reenables_in_finally, (
-            "setSortingEnabled(True) must be called inside a finally block in _load_entries"
-        )
+        assert reenables_in_finally, "setSortingEnabled(True) must be called inside a finally block in _load_entries"
 
 
 class TestScopeRegressionGuard:

@@ -279,9 +279,7 @@ class InspectDialog(_get_base_class()):
             return
         if not self._project_dir:
             if self._iface is not None:
-                self._iface.messageBar().pushWarning(
-                    "GeoLineage", "Save the project first to relink parent paths."
-                )
+                self._iface.messageBar().pushWarning("GeoLineage", "Save the project first to relink parent paths.")
             return
         dlg = RelinkDialog(gpkg_path, self._project_dir, self)
         dlg.exec_()
