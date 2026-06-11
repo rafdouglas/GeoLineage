@@ -25,25 +25,57 @@ def record_processing(
     """
     ensure_lineage_table(gpkg_path)
     with sqlite3.connect(gpkg_path) as conn:
-        cursor = conn.execute(
-            f"""INSERT INTO {LINEAGE_TABLE}
-            (layer_name, operation_summary, operation_tool, operation_params,
-             parent_files, parent_metadata, parent_checksums, output_crs_epsg,
-             created_by, entry_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'processing')""",  # noqa: S608  # nosec B608
-            (
-                layer_name,
-                _build_processing_summary(tool, params),
-                tool,
-                json.dumps(params),
-                json.dumps(parents),
-                json.dumps(parent_metadata),
-                json.dumps(parent_checksums),
-                output_crs_epsg,
-                created_by,
-            ),
+        return record_processing_via_conn(
+            conn,
+            layer_name,
+            tool,
+            params,
+            parents,
+            parent_metadata,
+            parent_checksums,
+            output_crs_epsg,
+            created_by,
         )
-        return cursor.lastrowid
+
+
+def record_processing_via_conn(
+    conn: sqlite3.Connection,
+    layer_name: str,
+    tool: str,
+    params: dict,
+    parents: list[str],
+    parent_metadata: list[dict],
+    parent_checksums: dict[str, str],
+    output_crs_epsg: int | None = None,
+    created_by: str | None = None,
+) -> int:
+    """Insert a processing row using an existing connection.
+
+    Performs only the INSERT — no table-ensure, no commit, no connection
+    management. The caller owns the transaction, so several entries can be
+    written atomically within a single ``with conn:`` block.
+
+    Returns the row id of the inserted entry.
+    """
+    cursor = conn.execute(
+        f"""INSERT INTO {LINEAGE_TABLE}
+        (layer_name, operation_summary, operation_tool, operation_params,
+         parent_files, parent_metadata, parent_checksums, output_crs_epsg,
+         created_by, entry_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'processing')""",  # noqa: S608  # nosec B608
+        (
+            layer_name,
+            _build_processing_summary(tool, params),
+            tool,
+            json.dumps(params),
+            json.dumps(parents),
+            json.dumps(parent_metadata),
+            json.dumps(parent_checksums),
+            output_crs_epsg,
+            created_by,
+        ),
+    )
+    return cursor.lastrowid
 
 
 def record_edit(

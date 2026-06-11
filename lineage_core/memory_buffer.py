@@ -1,7 +1,9 @@
 import contextlib
 import logging
+import sqlite3
 
-from .recorder import record_processing
+from .recorder import record_processing_via_conn
+from .schema import ensure_lineage_table_via_conn
 from .settings import LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.memory_buffer")
@@ -78,10 +80,12 @@ class MemoryBuffer:
         return chain
 
     def flush(self, layer_id: str, gpkg_path: str) -> None:
-        """Write the complete lineage chain to the GeoPackage.
+        """Write the complete lineage chain to the GeoPackage atomically.
 
-        Traverses the link graph to collect all ancestor entries,
-        then writes each entry to the _lineage table via record_processing.
+        Traverses the link graph to collect all ancestor entries, then writes
+        every entry to the _lineage table within a single transaction. If any
+        entry fails, the transaction rolls back (zero rows written) and the
+        in-memory chain is retained so a later retry produces no duplicates.
 
         No-op if layer_id is unknown.
         """
@@ -90,20 +94,24 @@ class MemoryBuffer:
             logger.debug("flush(%s): no entries to write", layer_id)
             return
 
-        for entry in chain:
-            record_processing(
-                gpkg_path=gpkg_path,
-                layer_name=entry.get("layer_name", "unknown"),
-                tool=entry.get("tool", "unknown"),
-                params=entry.get("params", {}),
-                parents=entry.get("parents", []),
-                parent_metadata=entry.get("parent_metadata", []),
-                parent_checksums=entry.get("parent_checksums", {}),
-                output_crs_epsg=entry.get("output_crs_epsg"),
-                created_by=entry.get("created_by"),
-            )
+        with sqlite3.connect(gpkg_path) as conn:
+            ensure_lineage_table_via_conn(conn)
+            # Single transaction: all entries commit together or none do.
+            with conn:
+                for entry in chain:
+                    record_processing_via_conn(
+                        conn,
+                        layer_name=entry.get("layer_name", "unknown"),
+                        tool=entry.get("tool", "unknown"),
+                        params=entry.get("params", {}),
+                        parents=entry.get("parents", []),
+                        parent_metadata=entry.get("parent_metadata", []),
+                        parent_checksums=entry.get("parent_checksums", {}),
+                        output_crs_epsg=entry.get("output_crs_epsg"),
+                        created_by=entry.get("created_by"),
+                    )
 
-        # Clean up flushed entries and links
+        # Clean up flushed entries and links only after a successful commit.
         self._cleanup_chain(layer_id)
 
     def discard(self, layer_id: str) -> None:

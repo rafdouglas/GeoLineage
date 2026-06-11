@@ -638,3 +638,148 @@ def test_pending_edit_snapshots_thread_safe():
         t.join()
 
     assert not errors, f"Thread safety errors: {errors}"
+
+
+# --- Edit-signal lifecycle tests (issue 1.2) ---
+
+
+class FakeSignal:
+    """Minimal Qt-signal stand-in with connect/disconnect/emit semantics."""
+
+    def __init__(self) -> None:
+        self._slots: list = []
+
+    def connect(self, slot) -> None:
+        self._slots.append(slot)
+
+    def disconnect(self, slot) -> None:
+        # Mimic Qt: disconnecting an unconnected slot raises.
+        try:
+            self._slots.remove(slot)
+        except ValueError as exc:
+            raise TypeError("slot not connected") from exc
+
+    def emit(self) -> None:
+        for slot in list(self._slots):
+            slot()
+
+    def slot_count(self) -> int:
+        return len(self._slots)
+
+
+class MockEditableLayer:
+    """Duck-typed editable GeoPackage layer for lifecycle tests."""
+
+    def __init__(self, layer_id="layer-1", source="/tmp/test.gpkg", *, with_before=True, with_will_delete=True):
+        self._id = layer_id
+        self._source = source
+        self.afterCommitChanges = FakeSignal()
+        if with_before:
+            self.beforeCommitChanges = FakeSignal()
+        if with_will_delete:
+            self.willBeDeleted = FakeSignal()
+        self.edit_buffer_error: Exception | None = None
+
+    def id(self):
+        return self._id
+
+    def source(self):
+        return self._source
+
+    def name(self):
+        return "rivers"
+
+    def editBuffer(self):
+        if self.edit_buffer_error is not None:
+            raise self.edit_buffer_error
+        return None
+
+
+class TestEditSignalLifecycle:
+    def setup_method(self):
+        from GeoLineage.lineage_core import hooks
+
+        hooks._hook_state["_layer_edit_connections"] = {}
+        hooks._pending_edit_snapshots.clear()
+
+    def teardown_method(self):
+        from GeoLineage.lineage_core import hooks
+
+        hooks._hook_state["_layer_edit_connections"] = {}
+        hooks._pending_edit_snapshots.clear()
+
+    def test_skip_without_before_commit(self):
+        from GeoLineage.lineage_core import hooks
+
+        layer = MockEditableLayer(with_before=False)
+        hooks._connect_edit_signals(layer)
+
+        assert "layer-1" not in hooks._hook_state["_layer_edit_connections"]
+
+    def test_connect_registers_bookkeeping(self):
+        from GeoLineage.lineage_core import hooks
+
+        layer = MockEditableLayer()
+        hooks._connect_edit_signals(layer)
+
+        assert "layer-1" in hooks._hook_state["_layer_edit_connections"]
+        assert layer.beforeCommitChanges.slot_count() == 1
+        assert layer.afterCommitChanges.slot_count() == 1
+        assert layer.willBeDeleted.slot_count() == 1
+
+    def test_no_duplicate_connections(self):
+        from GeoLineage.lineage_core import hooks
+
+        layer = MockEditableLayer()
+        hooks._connect_edit_signals(layer)
+        hooks._connect_edit_signals(layer)  # re-fire of layersAdded
+
+        assert layer.beforeCommitChanges.slot_count() == 1
+        assert layer.afterCommitChanges.slot_count() == 1
+        assert len(hooks._hook_state["_layer_edit_connections"]) == 1
+
+    def test_will_be_deleted_cleans_bookkeeping_and_snapshots(self):
+        from GeoLineage.lineage_core import hooks
+
+        layer = MockEditableLayer()
+        hooks._connect_edit_signals(layer)
+        hooks._pending_edit_snapshots["layer-1"] = {"features_added": 3}
+
+        layer.willBeDeleted.emit()
+
+        assert "layer-1" not in hooks._hook_state["_layer_edit_connections"]
+        assert "layer-1" not in hooks._pending_edit_snapshots
+
+    def test_runtime_error_in_before_commit_cleans_up(self):
+        from GeoLineage.lineage_core import hooks
+
+        layer = MockEditableLayer()
+        layer.edit_buffer_error = RuntimeError("wrapped C++ object deleted")
+        hooks._connect_edit_signals(layer)
+
+        # Emitting the snapshot handler must not raise, and must self-clean.
+        layer.beforeCommitChanges.emit()
+
+        assert "layer-1" not in hooks._hook_state["_layer_edit_connections"]
+        assert "layer-1" not in hooks._pending_edit_snapshots
+
+    def test_disconnect_helper_purges_snapshots(self):
+        from GeoLineage.lineage_core import hooks
+
+        layer = MockEditableLayer()
+        hooks._connect_edit_signals(layer)
+        hooks._pending_edit_snapshots["layer-1"] = {"features_added": 1}
+
+        hooks._disconnect_layer_edit_signals("layer-1")
+
+        assert "layer-1" not in hooks._hook_state["_layer_edit_connections"]
+        assert "layer-1" not in hooks._pending_edit_snapshots
+        assert layer.beforeCommitChanges.slot_count() == 0
+        assert layer.afterCommitChanges.slot_count() == 0
+
+    def test_disconnect_helper_idempotent(self):
+        from GeoLineage.lineage_core import hooks
+
+        # Calling for an unknown layer must be a safe no-op.
+        hooks._disconnect_layer_edit_signals("ghost")
+        hooks._disconnect_layer_edit_signals("ghost")

@@ -10,6 +10,17 @@ if TYPE_CHECKING:
 from .graph_layout import LayoutConfig
 
 
+def build_edge_path_map(edge_paths) -> dict:
+    """Map each edge's (source, target) identity to its routed EdgePath.
+
+    Pure and Qt-free so it can be unit-tested without a QApplication. The key
+    uses the original parent->child direction (EdgePath.source/target keep that
+    direction even for cycle-reversed edges), which is the same key used for
+    ``_edge_items``.
+    """
+    return {(edge_path.source, edge_path.target): edge_path for edge_path in edge_paths}
+
+
 def _get_base_class():
     """Return QGraphicsScene at runtime, object for static analysis."""
     try:
@@ -42,7 +53,9 @@ class LineageGraphScene(_get_base_class()):
         self._on_expand_requested = None
 
         self._node_items: dict[str, object] = {}
-        self._edge_items: list[object] = []
+        # Keyed by (parent_path, child_path) so reset_layout can re-pair each
+        # edge item with its routed path by identity, not by list position.
+        self._edge_items: dict[tuple[str, str], object] = {}
         self._current_graph: LineageGraph | None = None
         self._config = LayoutConfig()
 
@@ -99,7 +112,7 @@ class LineageGraphScene(_get_base_class()):
                 continue
             item = GraphEdgeItem(matching_edge, edge_path.waypoints, self._config)
             self.addItem(item)
-            self._edge_items.append(item)
+            self._edge_items[(edge_path.source, edge_path.target)] = item
 
             # Wire edge to its source and target node items
             source_node_item = self._node_items.get(edge_path.source)
@@ -133,10 +146,15 @@ class LineageGraphScene(_get_base_class()):
             if pos is not None:
                 node_item.setPos(pos.x, pos.y)
 
-        # Explicitly reset edge waypoints to layout-computed paths
-        for i, edge_item in enumerate(self._edge_items):
-            if i < len(result.edge_paths):
-                edge_item.set_waypoints(result.edge_paths[i].waypoints)
+        # Reset edge waypoints by matching each item to its routed path by
+        # identity. The new layout may drop edges (e.g. different cycle
+        # handling), so a missing key leaves that item's waypoints untouched
+        # rather than grabbing some other edge's path.
+        edge_path_map = build_edge_path_map(result.edge_paths)
+        for key, edge_item in self._edge_items.items():
+            edge_path = edge_path_map.get(key)
+            if edge_path is not None:
+                edge_item.set_waypoints(edge_path.waypoints)
 
     def highlight_nodes(self, filename_pattern: str) -> None:
         """Highlight nodes whose filename matches pattern (case-insensitive substring).

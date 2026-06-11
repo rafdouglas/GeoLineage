@@ -181,14 +181,34 @@ class GeoLineagePlugin:
         project.writeEntry("GeoLineage", _PROJECT_PROPERTY_KEY, enabled)
 
     def _restore_toggle_state(self) -> None:
-        """Restore toggle state from current project's custom properties."""
+        """Reconcile recording state with the current project's saved flag.
+
+        Runs unconditionally on project load: a project that never enabled
+        recording (or has the flag off) must turn recording OFF, otherwise the
+        previous project's recording leaks across the switch. The toggle's
+        signal is blocked so this reconcile does not re-enter ``_on_toggle``
+        and dirty a freshly loaded project via ``_save_toggle_state``.
+        """
         from qgis.core import QgsProject
 
+        if not self.toggle_action:
+            return
+
         project = QgsProject.instance()
-        enabled, ok = project.readBoolEntry("GeoLineage", _PROJECT_PROPERTY_KEY, False)
-        if ok and enabled and self.toggle_action:
-            # Set checked state — this will trigger _on_toggle
-            self.toggle_action.setChecked(True)
+        target, _ok = project.readBoolEntry("GeoLineage", _PROJECT_PROPERTY_KEY, False)
+
+        self.toggle_action.blockSignals(True)
+        try:
+            self.toggle_action.setChecked(target)
+        finally:
+            self.toggle_action.blockSignals(False)
+
+        # install_hooks/uninstall_hooks are idempotent — safe to call directly.
+        if target:
+            self._enable_recording()
+        else:
+            self._disable_recording()
+        self._update_icon(target)
 
     def _on_project_read(self) -> None:
         """Handle project load — restore toggle state."""

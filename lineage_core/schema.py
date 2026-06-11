@@ -29,8 +29,21 @@ def ensure_lineage_table(db_path: str) -> None:
     IMPORTANT: Do NOT register _lineage in gpkg_contents.
     Uses CREATE TABLE IF NOT EXISTS for idempotency.
     """
+    with sqlite3.connect(db_path) as conn:
+        ensure_lineage_table_via_conn(conn)
+    logger.debug("Ensured lineage tables exist in %s", db_path)
+
+
+def ensure_lineage_table_via_conn(conn: sqlite3.Connection) -> None:
+    """Create lineage tables using an existing connection. Idempotent.
+
+    Uses individual ``conn.execute()`` calls rather than ``executescript()`` so
+    the caller's open transaction is preserved (``executescript`` implicitly
+    commits, which would break an enclosing ``with conn:`` block).
+    """
     # LINEAGE_TABLE, META_TABLE, SCHEMA_VERSION are module-level constants — safe to interpolate.
-    ddl = f"""
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {LINEAGE_TABLE} (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             layer_name          TEXT NOT NULL,
@@ -47,17 +60,19 @@ def ensure_lineage_table(db_path: str) -> None:
             edit_summary        TEXT,
             qgis_sketcher       TEXT
         );
-
+    """  # noqa: S608  # nosec B608
+    )
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {META_TABLE} (
             key   TEXT PRIMARY KEY,
             value TEXT
         );
-
-        INSERT OR IGNORE INTO {META_TABLE} VALUES ('schema_version', '{SCHEMA_VERSION}');
     """  # noqa: S608  # nosec B608
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript(ddl)
-    logger.debug("Ensured lineage tables exist in %s", db_path)
+    )
+    conn.execute(
+        f"INSERT OR IGNORE INTO {META_TABLE} VALUES ('schema_version', '{SCHEMA_VERSION}')"  # noqa: S608  # nosec B608
+    )
 
 
 def get_schema_version(db_path: str) -> str | None:

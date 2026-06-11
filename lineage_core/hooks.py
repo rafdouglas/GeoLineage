@@ -717,14 +717,30 @@ def _uninstall_edit_signals() -> None:
     with contextlib.suppress(TypeError, RuntimeError):
         project.layersAdded.disconnect(_on_layers_added)
 
-    # Disconnect per-layer signals
-    for _layer_id, handler in list(_hook_state.get("_layer_edit_connections", {}).items()):
-        with contextlib.suppress(TypeError, RuntimeError):
-            handler()  # Each handler is a disconnect callable
+    # Disconnect per-layer signals and purge their pending snapshots.
+    for layer_id in list(_hook_state.get("_layer_edit_connections", {}).keys()):
+        _disconnect_layer_edit_signals(layer_id)
 
     _hook_state["signal_connections"] = []
     _hook_state["_layer_edit_connections"] = {}
     logger.debug("Edit signals disconnected")
+
+
+def _disconnect_layer_edit_signals(layer_id: str) -> None:
+    """Disconnect and forget all edit-signal bookkeeping for a single layer.
+
+    Idempotent and safe to call after the underlying C++ layer has been
+    destroyed: the stored disconnect callable already suppresses
+    TypeError/RuntimeError. Also purges any pending edit snapshot so a deleted
+    layer cannot leak buffered state.
+    """
+    edit_connections = _hook_state.get("_layer_edit_connections", {})
+    disconnect = edit_connections.pop(layer_id, None)
+    if disconnect is not None:
+        with contextlib.suppress(TypeError, RuntimeError):
+            disconnect()
+    with _edit_snapshots_lock:
+        _pending_edit_snapshots.pop(layer_id, None)
 
 
 def _on_layers_added(layers: list) -> None:
@@ -753,16 +769,25 @@ def _connect_edit_signals(layer: Any) -> None:
     if not _is_gpkg_path(base_path):
         return
 
-    if not hasattr(layer, "afterCommitChanges"):
+    if not hasattr(layer, "beforeCommitChanges") or not hasattr(layer, "afterCommitChanges"):
         return
 
     layer_id = layer.id() if hasattr(layer, "id") else str(id(layer))
+
+    # layersAdded can re-fire for a layer that is already wired up — connecting
+    # twice would record each edit twice and leak signal connections.
+    if layer_id in _hook_state.get("_layer_edit_connections", {}):
+        return
 
     def _on_before_commit() -> None:
         """Snapshot edit buffer counts before the commit clears them."""
         try:
             with _edit_snapshots_lock:
                 _pending_edit_snapshots[layer_id] = _build_edit_summary(layer)
+        except RuntimeError:
+            # Underlying C++ layer was deleted — clean up the stale closure.
+            logger.debug("Layer %s deleted before commit snapshot; cleaning up", layer_id)
+            _disconnect_layer_edit_signals(layer_id)
         except Exception:
             logger.exception("Failed to snapshot edit buffer")
 
@@ -773,11 +798,20 @@ def _connect_edit_signals(layer: Any) -> None:
                 snapshot = _pending_edit_snapshots.pop(layer_id, None)
             if snapshot and any(snapshot.values()):
                 _record_edit_lineage(layer, base_path, snapshot)
+        except RuntimeError:
+            logger.debug("Layer %s deleted during commit handling; cleaning up", layer_id)
+            _disconnect_layer_edit_signals(layer_id)
         except Exception:
             logger.exception("Edit lineage recording failed; edit unaffected")
 
+    def _on_will_be_deleted() -> None:
+        """Tear down bookkeeping before the C++ layer is destroyed."""
+        _disconnect_layer_edit_signals(layer_id)
+
     layer.beforeCommitChanges.connect(_on_before_commit)
     layer.afterCommitChanges.connect(_on_after_commit)
+    if hasattr(layer, "willBeDeleted"):
+        layer.willBeDeleted.connect(_on_will_be_deleted)
 
     # Store disconnect callable
     edit_connections = _hook_state.setdefault("_layer_edit_connections", {})
@@ -787,6 +821,9 @@ def _connect_edit_signals(layer: Any) -> None:
             layer.beforeCommitChanges.disconnect(_on_before_commit)
         with contextlib.suppress(TypeError, RuntimeError):
             layer.afterCommitChanges.disconnect(_on_after_commit)
+        if hasattr(layer, "willBeDeleted"):
+            with contextlib.suppress(TypeError, RuntimeError):
+                layer.willBeDeleted.disconnect(_on_will_be_deleted)
 
     edit_connections[layer_id] = _disconnect
     logger.debug("Connected edit signals for layer %s (%s)", layer_id, base_path)

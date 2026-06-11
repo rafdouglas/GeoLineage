@@ -244,3 +244,36 @@ def test_record_with_created_by(tmp_path):
     assert rows[proc_id]["created_by"] == "bob"
     assert rows[edit_id]["created_by"] == "carol"
     assert rows[export_id]["created_by"] == "dave"
+
+
+def test_record_processing_via_conn_respects_caller_transaction(tmp_path):
+    """record_processing_via_conn performs only the INSERT — the caller's
+
+    transaction governs commit/rollback. A rolled-back enclosing transaction
+    must leave zero rows.
+    """
+    from GeoLineage.lineage_core.recorder import record_processing_via_conn
+    from GeoLineage.lineage_core.schema import ensure_lineage_table_via_conn
+
+    gpkg = _make_gpkg(tmp_path / "test.gpkg")
+
+    with sqlite3.connect(gpkg) as conn:
+        ensure_lineage_table_via_conn(conn)
+        try:
+            with conn:
+                record_processing_via_conn(
+                    conn,
+                    layer_name="rivers",
+                    tool="native:clip",
+                    params={"d": 1},
+                    parents=[],
+                    parent_metadata=[],
+                    parent_checksums={},
+                )
+                raise RuntimeError("force rollback")
+        except RuntimeError:
+            pass
+
+    with sqlite3.connect(gpkg) as conn:
+        count = conn.execute(f"SELECT COUNT(*) FROM {LINEAGE_TABLE}").fetchone()[0]
+    assert count == 0

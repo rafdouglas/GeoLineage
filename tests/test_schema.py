@@ -1,6 +1,11 @@
 import sqlite3
 
-from GeoLineage.lineage_core.schema import ensure_lineage_table, get_schema_version, read_lineage_rows
+from GeoLineage.lineage_core.schema import (
+    ensure_lineage_table,
+    ensure_lineage_table_via_conn,
+    get_schema_version,
+    read_lineage_rows,
+)
 from GeoLineage.lineage_core.settings import LINEAGE_TABLE, META_TABLE
 
 
@@ -137,3 +142,38 @@ def test_read_lineage_rows_drops_unknown_columns(tmp_path):
     assert len(rows) == 1
     assert "future_field" not in rows[0]
     assert rows[0]["layer_name"] == "roads"
+
+
+def test_ensure_lineage_table_via_conn_idempotent(tmp_path):
+    db_path = _make_gpkg(tmp_path / "test.gpkg")
+    with sqlite3.connect(db_path) as conn:
+        ensure_lineage_table_via_conn(conn)
+        ensure_lineage_table_via_conn(conn)  # second call must not raise
+
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        count = conn.execute(f"SELECT COUNT(*) FROM {META_TABLE} WHERE key = 'schema_version'").fetchone()[0]
+
+    assert LINEAGE_TABLE in tables
+    assert META_TABLE in tables
+    assert count == 1
+
+
+def test_ensure_lineage_table_via_conn_no_autocommit(tmp_path):
+    """The via_conn variant must not commit — a rollback discards the DDL.
+
+    This guards the atomic-flush contract: ensure runs inside the caller's
+    transaction without an implicit commit (unlike executescript()).
+    """
+    db_path = _make_gpkg(tmp_path / "test.gpkg")
+    conn = sqlite3.connect(db_path, isolation_level="DEFERRED")
+    try:
+        conn.execute("BEGIN")
+        ensure_lineage_table_via_conn(conn)
+        conn.rollback()
+
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    finally:
+        conn.close()
+
+    assert LINEAGE_TABLE not in tables
+    assert META_TABLE not in tables

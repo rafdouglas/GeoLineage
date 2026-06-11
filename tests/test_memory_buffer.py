@@ -219,7 +219,7 @@ def test_flush_does_not_cleanup_on_record_failure(tmp_path):
         raise OSError("simulated disk error")
 
     with pytest.MonkeyPatch().context() as mp:
-        mp.setattr("GeoLineage.lineage_core.memory_buffer.record_processing", failing_record)
+        mp.setattr("GeoLineage.lineage_core.memory_buffer.record_processing_via_conn", failing_record)
         with pytest.raises(IOError):
             buf.flush(b_id, str(tmp_path / "out.gpkg"))
 
@@ -252,7 +252,7 @@ def test_cleanup_removes_back_references_from_links(tmp_path):
     # Flush B's chain — cleans up B and A, but C still has A in its parent list
     with pytest.MonkeyPatch().context() as mp:
         mp.setattr(
-            "GeoLineage.lineage_core.memory_buffer.record_processing",
+            "GeoLineage.lineage_core.memory_buffer.record_processing_via_conn",
             lambda *a, **k: None,
         )
         buf.flush(b_id, str(tmp_path / "out.gpkg"))
@@ -281,3 +281,87 @@ def test_flush_cleans_up(tmp_path):
     assert "B" not in buf._entries
     assert "A" not in buf._links
     assert "B" not in buf._links
+
+
+# ---------------------------------------------------------------------------
+# 13. test_flush_atomic_on_midchain_failure
+# ---------------------------------------------------------------------------
+
+
+def test_flush_atomic_on_midchain_failure(tmp_path):
+    """A failure midway through the chain must write zero rows (rollback).
+
+    The chain A→B→C is written in one transaction. If the second entry fails,
+    the already-inserted first entry must be rolled back, and the in-memory
+    chain must remain intact for a retry.
+    """
+    import GeoLineage.lineage_core.memory_buffer as mb
+
+    gpkg = _make_gpkg(tmp_path / "test.gpkg")
+    buf = MemoryBuffer()
+    buf.add("A", _make_entry("a", "native:buffer"))
+    buf.add("B", _make_entry("b", "native:clip"))
+    buf.add("C", _make_entry("c", "native:dissolve"))
+    buf.link("B", ["A"])
+    buf.link("C", ["B"])
+
+    real_via_conn = mb.record_processing_via_conn
+    calls = {"n": 0}
+
+    def fail_on_second(conn, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated disk error on entry 2")
+        return real_via_conn(conn, *args, **kwargs)
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(mb, "record_processing_via_conn", fail_on_second)
+        with pytest.raises(IOError):
+            buf.flush("C", gpkg)
+
+    # Zero rows written — the first INSERT was rolled back with the failed one.
+    with sqlite3.connect(gpkg) as conn:
+        count = conn.execute(f"SELECT COUNT(*) FROM {LINEAGE_TABLE}").fetchone()[0]
+    assert count == 0
+
+    # Chain retained for retry.
+    assert buf.get_chain("C") != []
+
+
+# ---------------------------------------------------------------------------
+# 14. test_flush_retry_after_failure_no_duplicates
+# ---------------------------------------------------------------------------
+
+
+def test_flush_retry_after_failure_no_duplicates(tmp_path):
+    """Retrying flush after a transient failure writes exactly the chain once."""
+    import GeoLineage.lineage_core.memory_buffer as mb
+
+    gpkg = _make_gpkg(tmp_path / "test.gpkg")
+    buf = MemoryBuffer()
+    buf.add("A", _make_entry("a", "native:buffer"))
+    buf.add("B", _make_entry("b", "native:clip"))
+    buf.link("B", ["A"])
+
+    real_via_conn = mb.record_processing_via_conn
+    calls = {"n": 0}
+
+    def fail_first_attempt(conn, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:  # second entry of the first attempt
+            raise OSError("transient lock")
+        return real_via_conn(conn, *args, **kwargs)
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(mb, "record_processing_via_conn", fail_first_attempt)
+        with pytest.raises(IOError):
+            buf.flush("B", gpkg)
+
+    # Retry with the real implementation succeeds.
+    buf.flush("B", gpkg)
+
+    with sqlite3.connect(gpkg) as conn:
+        rows = conn.execute(f"SELECT layer_name FROM {LINEAGE_TABLE} ORDER BY id").fetchall()
+
+    # Exactly the two chain entries — no duplicates from the failed attempt.
+    assert [r[0] for r in rows] == ["a", "b"]
