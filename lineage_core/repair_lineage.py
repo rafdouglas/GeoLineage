@@ -83,50 +83,52 @@ def repair_lineage(gpkg_path: str) -> list[dict]:
             logger.warning("Table %s not found in %s: %s", LINEAGE_TABLE, gpkg_path, exc)
             return repaired
 
-        for row_id, operation_tool, operation_params_raw, parent_files_raw in rows:
-            # Skip rows that already have a non-empty parent array.
-            if parent_files_raw not in (None, "", "[]"):
-                try:
-                    existing = json.loads(parent_files_raw)
-                    if isinstance(existing, list) and existing:
+        # All repairs run in a single transaction: if any UPDATE fails, the
+        # whole repair rolls back so the table is never left partially modified.
+        try:
+            with conn:
+                for row_id, operation_tool, operation_params_raw, parent_files_raw in rows:
+                    # Skip rows that already have a non-empty parent array.
+                    if parent_files_raw not in (None, "", "[]"):
+                        try:
+                            existing = json.loads(parent_files_raw)
+                            if isinstance(existing, list) and existing:
+                                continue
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+                    # Parse operation_params.
+                    if not operation_params_raw:
                         continue
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                    try:
+                        params = json.loads(operation_params_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        logger.debug("Row %d: malformed operation_params JSON — skipping", row_id)
+                        continue
 
-            # Parse operation_params.
-            if not operation_params_raw:
-                continue
-            try:
-                params = json.loads(operation_params_raw)
-            except (json.JSONDecodeError, TypeError):
-                logger.debug("Row %d: malformed operation_params JSON — skipping", row_id)
-                continue
+                    if not isinstance(params, dict):
+                        continue
 
-            if not isinstance(params, dict):
-                continue
+                    parents = _extract_parents_from_params(params)
+                    if not parents:
+                        continue
 
-            parents = _extract_parents_from_params(params)
-            if not parents:
-                continue
-
-            new_parent_files = json.dumps(parents)
-            try:
-                conn.execute(
-                    f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",  # noqa: S608  # nosec B608
-                    (new_parent_files, row_id),
-                )
-                conn.commit()
-            except sqlite3.Error as exc:
-                logger.error("Row %d: failed to update parent_files: %s", row_id, exc)
-                continue
-
-            logger.info(
-                "Repaired row id=%d operation_tool=%r parents=%r",
-                row_id,
-                operation_tool,
-                parents,
-            )
-            repaired.append({"id": row_id, "operation_tool": operation_tool, "parents": parents})
+                    new_parent_files = json.dumps(parents)
+                    conn.execute(
+                        f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",  # noqa: S608  # nosec B608
+                        (new_parent_files, row_id),
+                    )
+                    logger.info(
+                        "Repaired row id=%d operation_tool=%r parents=%r",
+                        row_id,
+                        operation_tool,
+                        parents,
+                    )
+                    repaired.append({"id": row_id, "operation_tool": operation_tool, "parents": parents})
+        except sqlite3.Error as exc:
+            # The `with conn:` block already rolled back — report zero repairs.
+            logger.error("Repair transaction failed, rolling back: %s", exc)
+            repaired.clear()
 
     finally:
         conn.close()

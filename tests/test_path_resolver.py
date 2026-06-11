@@ -93,6 +93,47 @@ def test_extract_gpkg_path_with_multiple_pipes():
     assert result == "/data/test.gpkg"
 
 
+def test_resolve_rejects_traversal_via_relative_branch(tmp_path):
+    """A '../'-escaping ref must not be reported 'found' via relative resolution.
+
+    The relative candidate normalizes to a path outside project_dir, so the
+    relative branch is skipped. The absolute branch then evaluates the raw ref
+    (still relative, won't match the secret), so the result is 'not_found'.
+    """
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    # A secret file two levels up from the project dir.
+    secret = tmp_path / "secret.gpkg"
+    secret.write_bytes(b"")
+
+    resolved, status = resolve("../secret.gpkg", str(project_dir))
+
+    assert status == "not_found"
+    assert resolved == "../secret.gpkg"
+
+
+def test_resolve_windows_style_relative(tmp_path):
+    """A backslash-style ref is treated as a single filename on POSIX.
+
+    On POSIX, 'sub\\data.gpkg' has no path separator, so it resolves directly
+    under project_dir (contained) — never escaping it.
+    """
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    target = project_dir / "data.gpkg"
+    target.write_bytes(b"")
+
+    # A contained relative ref still resolves; traversal does not.
+    resolved, status = resolve("data.gpkg", str(project_dir))
+    assert status == "found"
+    assert resolved == str(target)
+
+    # Windows-style absolute drive ref does not escape via the relative branch.
+    _resolved, status = resolve("C:\\Windows\\secret.gpkg", str(project_dir))
+    assert status == "not_found"
+
+
 def test_resolve_path_with_unicode(tmp_path):
     """Path containing unicode characters resolves correctly."""
     project_dir = tmp_path / "données"

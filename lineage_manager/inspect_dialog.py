@@ -225,12 +225,19 @@ class InspectDialog(_get_base_class()):
         gpkg_path = self._get_row_gpkg_path(row)
         if gpkg_path is None:
             return
-        entry_id = int(id_item.text())
+        try:
+            entry_id = int(id_item.text())
+        except ValueError:
+            logger.debug("Non-numeric entry id %r — ignoring cell change", id_item.text())
+            return
         new_value = self._table.item(row, col).text()
         try:
             update_entry_field(gpkg_path, entry_id, field, new_value)
         except Exception:
             logger.exception("Failed to update field %s for entry %d", field, entry_id)
+            self._iface.messageBar().pushWarning("GeoLineage", f"Could not save change to entry {entry_id}; reverting.")
+            # Reload to discard the stale in-table edit that was not persisted.
+            self._load_entries()
 
     def _on_delete(self) -> None:
         from qgis.PyQt.QtWidgets import QMessageBox

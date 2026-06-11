@@ -118,6 +118,6 @@ def read_lineage_rows_via_conn(conn: sqlite3.Connection) -> list[dict]:
         return []
 
     cols_sql = ", ".join(select_columns)
-    rows = conn.execute(f"SELECT {cols_sql} FROM {LINEAGE_TABLE}").fetchall()  # noqa: S608  # nosec B608
+    rows = conn.execute(f"SELECT {cols_sql} FROM {LINEAGE_TABLE} ORDER BY id ASC").fetchall()  # noqa: S608  # nosec B608
 
     return [dict(zip(select_columns, row, strict=False)) for row in rows]

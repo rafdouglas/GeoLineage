@@ -6,6 +6,7 @@ export_svg and export_png require Qt (T2).
 
 from __future__ import annotations
 
+import hashlib
 from typing import TYPE_CHECKING
 
 from ..lineage_retrieval.graph_builder import LineageGraph
@@ -47,10 +48,14 @@ def export_dot(graph: LineageGraph) -> str:
 
 
 def _path_to_id(path: str) -> str:
-    """Convert a file path to a valid DOT node ID."""
-    # Replace non-alphanumeric chars with underscores, prefix with 'n'
-    safe = "".join(c if c.isalnum() else "_" for c in path)
-    return f"n_{safe}"
+    """Convert a file path to a collision-free DOT node ID.
+
+    A char-substitution scheme collapsed distinct paths (e.g. 'a/b.gpkg' and
+    'a_b.gpkg') to the same ID. A short hash of the full path is unique; the
+    human-readable filename is kept separately in the node label.
+    """
+    digest = hashlib.md5(path.encode("utf-8"), usedforsecurity=False).hexdigest()
+    return f"n_{digest[:12]}"
 
 
 def export_svg(scene: QGraphicsScene, path: str) -> None:
@@ -66,6 +71,8 @@ def export_svg(scene: QGraphicsScene, path: str) -> None:
     generator.setViewBox(QRectF(0, 0, rect.width(), rect.height()))
 
     painter = QPainter(generator)
+    if not painter.isActive():
+        raise OSError(f"Cannot write SVG to {path} (painter failed to initialize)")
     scene.render(painter)
     painter.end()
 
@@ -94,8 +101,11 @@ def export_png(scene: QGraphicsScene, path: str, dpi: int = 150) -> None:
     image.fill(Qt.white)
 
     painter = QPainter(image)
+    if not painter.isActive():
+        raise OSError(f"Cannot render PNG for {path} (painter failed to initialize)")
     painter.setRenderHint(QPainter.Antialiasing)
     scene.render(painter, QRectF(0, 0, width, height), rect)
     painter.end()
 
-    image.save(path, "PNG")
+    if not image.save(path, "PNG"):
+        raise OSError(f"Failed to write PNG to {path}")

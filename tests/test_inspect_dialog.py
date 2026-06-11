@@ -236,3 +236,37 @@ class TestInitSignature:
             "InspectDialog.__init__ must accept an 'iface' parameter so _load_entries can "
             "enumerate layers loaded in the current QGIS project (Phase 2)."
         )
+
+
+# ---------------------------------------------------------------------------
+# Behavioral guard: non-numeric id in _on_cell_changed (issue 2.1)
+# ---------------------------------------------------------------------------
+
+
+def test_on_cell_changed_ignores_non_numeric_id(monkeypatch):
+    """A non-numeric ID cell must not raise or attempt a save."""
+    from unittest.mock import MagicMock
+
+    import GeoLineage.lineage_manager.data_ops as data_ops
+    from GeoLineage.lineage_manager.inspect_dialog import InspectDialog
+
+    calls = []
+    monkeypatch.setattr(data_ops, "update_entry_field", lambda *a, **k: calls.append(a))
+
+    dlg = InspectDialog.__new__(InspectDialog)
+    dlg._updating = False
+    dlg._EDITABLE_COLS = {2: "operation_summary"}
+    dlg._COL_ID = 0
+    dlg._get_row_gpkg_path = lambda row: "/tmp/x.gpkg"
+
+    id_item = MagicMock()
+    id_item.text.return_value = "not-a-number"
+    value_item = MagicMock()
+    value_item.text.return_value = "new value"
+    table = MagicMock()
+    table.item.side_effect = lambda row, col: id_item if col == 0 else value_item
+    dlg._table = table
+
+    # Must not raise and must not attempt a save.
+    dlg._on_cell_changed(0, 2)
+    assert calls == []

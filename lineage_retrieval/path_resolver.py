@@ -33,9 +33,13 @@ def resolve(parent_ref: str, project_dir: str) -> tuple[str, str]:
     Returns:
         (resolved_path, status) where status is 'found' or 'not_found'
     """
-    # Try as relative path first
+    # Try as relative path first, but contain it within project_dir: a stored
+    # ref like '../../etc/passwd' must not be resolved via the relative branch
+    # to a file outside the project. Absolute refs (os.path.join discards
+    # project_dir) and traversal escapes fall through to the absolute check.
+    project_root = os.path.normpath(project_dir)
     relative_candidate = os.path.normpath(os.path.join(project_dir, parent_ref))
-    if os.path.isfile(relative_candidate):
+    if relative_candidate.startswith(project_root + os.sep) and os.path.isfile(relative_candidate):
         return (relative_candidate, "found")
 
     # Try as absolute path

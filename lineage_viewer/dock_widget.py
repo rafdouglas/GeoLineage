@@ -178,20 +178,52 @@ class LineageDockWidget(_get_dock_base()):
             self._detail_panel.set_node(self._current_graph.nodes[path])
 
     def _on_load_layer(self, path: str) -> None:
-        """Load a GeoPackage file as a layer in QGIS."""
-        from qgis.core import QgsVectorLayer
+        """Load a GeoPackage file as a layer in QGIS.
+
+        A GeoPackage may hold several tables; loading the bare path lets OGR
+        pick one arbitrarily. Enumerate the sub-layers and load a specific
+        table by name so the user gets the layer they expect.
+        """
+        from qgis.core import QgsProject, QgsVectorLayer
 
         if not os.path.isfile(path):
             self._iface.messageBar().pushWarning("GeoLineage", f"File not found: {path}")
             return
 
-        layer = QgsVectorLayer(path, os.path.basename(path), "ogr")
-        if layer.isValid():
-            from qgis.core import QgsProject
+        table_names = self._list_gpkg_tables(path)
+        if len(table_names) > 1:
+            chosen = table_names[0]
+            self._iface.messageBar().pushWarning(
+                "GeoLineage",
+                f"'{os.path.basename(path)}' contains multiple tables ({', '.join(table_names)}); loading '{chosen}'.",
+            )
+            uri, name = f"{path}|layername={chosen}", chosen
+        elif len(table_names) == 1:
+            uri, name = f"{path}|layername={table_names[0]}", table_names[0]
+        else:
+            uri, name = path, os.path.basename(path)
 
+        layer = QgsVectorLayer(uri, name, "ogr")
+        if layer.isValid():
             QgsProject.instance().addMapLayer(layer)
         else:
             self._iface.messageBar().pushWarning("GeoLineage", f"Could not load layer: {path}")
+
+    @staticmethod
+    def _list_gpkg_tables(path: str) -> list[str]:
+        """Return the vector table names in a GeoPackage, best-effort.
+
+        Uses QgsProviderRegistry.querySublayers when available; on any failure
+        returns an empty list so the caller falls back to a plain path load.
+        """
+        try:
+            from qgis.core import QgsProviderRegistry
+
+            sublayers = QgsProviderRegistry.instance().querySublayers(path)
+            return [s.name() for s in sublayers if s.name()]
+        except Exception:
+            logger.debug("Could not enumerate sub-layers for %s", path, exc_info=True)
+            return []
 
     def _on_parent_clicked(self, parent_path: str) -> None:
         """Handle click on a parent in the detail panel."""
@@ -218,21 +250,34 @@ class LineageDockWidget(_get_dock_base()):
 
             path, _ = QFileDialog.getSaveFileName(self, "Export DOT", "", "DOT files (*.dot)")
             if path:
-                dot_content = export_dot(self._current_graph)
-                with open(path, "w") as f:
-                    f.write(dot_content)
+                self._write_export(path, lambda: self._write_text(path, export_dot(self._current_graph)))
         elif fmt == "svg":
             from .export import export_svg
 
             path, _ = QFileDialog.getSaveFileName(self, "Export SVG", "", "SVG files (*.svg)")
             if path:
-                export_svg(self._scene, path)
+                self._write_export(path, lambda: export_svg(self._scene, path))
         elif fmt == "png":
             from .export import export_png
 
             path, _ = QFileDialog.getSaveFileName(self, "Export PNG", "", "PNG files (*.png)")
             if path:
-                export_png(self._scene, path)
+                self._write_export(path, lambda: export_png(self._scene, path))
+
+    @staticmethod
+    def _write_text(path: str, content: str) -> None:
+        with open(path, "w") as f:
+            f.write(content)
+
+    def _write_export(self, path: str, do_write) -> None:
+        """Run an export writer, surfacing any failure to the message bar."""
+        try:
+            do_write()
+        except Exception:
+            logger.exception("Export to %s failed", path)
+            self._iface.messageBar().pushWarning("GeoLineage", f"Export failed: could not write {path}")
+        else:
+            self._iface.messageBar().pushInfo("GeoLineage", f"Exported to {path}")
 
 
 def _get_view_base():

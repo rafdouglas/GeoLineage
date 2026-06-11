@@ -213,3 +213,52 @@ def test_idempotent(tmp_path):
     stored = json.loads(_get_parent_files(conn, row_id))
     conn.close()
     assert stored == ["/data/source.gpkg"]
+
+
+def test_repair_atomic_rollback_on_midloop_failure(tmp_path, monkeypatch):
+    """If an UPDATE fails midway, the whole repair rolls back (zero rows changed)."""
+    gpkg = tmp_path / "test.gpkg"
+    conn = _create_gpkg(gpkg)
+    params = {"INPUT": "/data/source.gpkg|layername=src"}
+    id1 = _insert_row(conn, operation_params=json.dumps(params), parent_files="[]")
+    id2 = _insert_row(conn, operation_params=json.dumps(params), parent_files="[]")
+    conn.close()
+
+    import GeoLineage.lineage_core.repair_lineage as rl
+
+    real_connect = sqlite3.connect
+
+    class _FaultyConn:
+        """Wraps a real connection and fails on the 2nd UPDATE."""
+
+        def __init__(self, real):
+            self._real = real
+            self._updates = 0
+
+        def execute(self, sql, *args):
+            if sql.strip().upper().startswith("UPDATE"):
+                self._updates += 1
+                if self._updates == 2:
+                    raise sqlite3.OperationalError("simulated failure on 2nd update")
+            return self._real.execute(sql, *args)
+
+        def __enter__(self):
+            self._real.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._real.__exit__(*exc)
+
+        def close(self):
+            self._real.close()
+
+    monkeypatch.setattr(rl.sqlite3, "connect", lambda path: _FaultyConn(real_connect(path)))
+
+    result = repair_lineage(str(gpkg))
+
+    # Repair reported zero (rolled back), and both rows are untouched.
+    assert result == []
+    check = real_connect(str(gpkg))
+    assert _get_parent_files(check, id1) == "[]"
+    assert _get_parent_files(check, id2) == "[]"
+    check.close()

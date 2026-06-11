@@ -144,6 +144,25 @@ def test_read_lineage_rows_drops_unknown_columns(tmp_path):
     assert rows[0]["layer_name"] == "roads"
 
 
+def test_read_lineage_rows_ordered_by_id(tmp_path):
+    """Rows are returned sorted by id ascending regardless of physical order."""
+    db_path = _make_gpkg(tmp_path / "test.gpkg")
+    ensure_lineage_table(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        # Insert with explicit out-of-order ids.
+        for rid, name in [(30, "c"), (10, "a"), (20, "b")]:
+            conn.execute(
+                f"INSERT INTO {LINEAGE_TABLE} (id, layer_name, operation_summary) VALUES (?, ?, ?)",
+                (rid, name, "op"),
+            )
+
+    rows = read_lineage_rows(db_path)
+
+    assert [r["id"] for r in rows] == [10, 20, 30]
+    assert [r["layer_name"] for r in rows] == ["a", "b", "c"]
+
+
 def test_ensure_lineage_table_via_conn_idempotent(tmp_path):
     db_path = _make_gpkg(tmp_path / "test.gpkg")
     with sqlite3.connect(db_path) as conn:
