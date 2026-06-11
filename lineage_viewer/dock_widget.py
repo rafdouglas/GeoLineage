@@ -307,7 +307,7 @@ class _LineageGraphView(_get_view_base()):  # noqa: F811
         self.setCursor(Qt.OpenHandCursor)
         self._panning = False
         self._pan_start = None
-        self._pan_total_dist = 0.0
+        self._pan_origin = None
 
     def mousePressEvent(self, event) -> None:
         from qgis.PyQt.QtCore import Qt
@@ -315,7 +315,9 @@ class _LineageGraphView(_get_view_base()):  # noqa: F811
         if event.button() == Qt.RightButton:
             self._panning = True
             self._pan_start = event.pos()
-            self._pan_total_dist = 0.0
+            # Remember where the press began so the drag/context-menu decision
+            # compares net displacement, not speed-dependent accumulated deltas.
+            self._pan_origin = event.pos()
             self.setCursor(Qt.ClosedHandCursor)
             event.accept()
         else:
@@ -324,7 +326,6 @@ class _LineageGraphView(_get_view_base()):  # noqa: F811
     def mouseMoveEvent(self, event) -> None:
         if self._panning and self._pan_start is not None:
             delta = event.pos() - self._pan_start
-            self._pan_total_dist += (delta.x() ** 2 + delta.y() ** 2) ** 0.5
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
             self._pan_start = event.pos()
@@ -338,7 +339,8 @@ class _LineageGraphView(_get_view_base()):  # noqa: F811
         if event.button() == Qt.RightButton and self._panning:
             self._panning = False
             self.setCursor(Qt.OpenHandCursor)
-            if self._pan_total_dist < 4:
+            moved = (event.pos() - self._pan_origin).manhattanLength() if self._pan_origin is not None else 0
+            if moved < 4:
                 # No real drag -- let context menu fire
                 super().mouseReleaseEvent(event)
             else:

@@ -203,7 +203,7 @@ def _break_cycles(
         while stack:
             node, children = stack[-1]
             if children:
-                child = children.pop(0)
+                child = children.pop()
                 if child in in_stack:
                     # Back edge — reverse it
                     logger.warning(
@@ -413,12 +413,17 @@ def _transpose(
 ) -> None:
     """Transpose step: try swapping adjacent node pairs to reduce crossings.
 
-    Modifies *result* in place.  Converges quickly (typically 1-3 passes).
+    Modifies *result* in place.  Converges quickly (typically 1-3 passes), so
+    the loop is capped at ``max_passes`` — standard Sugiyama practice to bound
+    worst-case cost on pathological graphs.
     """
+    max_passes = 3
     rank_index = {rank: idx for idx, rank in enumerate(sorted_ranks)}
     improved = True
-    while improved:
+    passes = 0
+    while improved and passes < max_passes:
         improved = False
+        passes += 1
         for rank in sorted_ranks:
             nodes = result[rank]
             rank_idx = rank_index[rank]

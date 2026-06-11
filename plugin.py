@@ -138,7 +138,8 @@ class GeoLineagePlugin:
         if self.toggle_action:
             self.iface.removePluginMenu("&GeoLineage", self.toggle_action)
         if self.toolbar:
-            del self.toolbar
+            self.iface.mainWindow().removeToolBar(self.toolbar)
+            self.toolbar.deleteLater()
             self.toolbar = None
 
         self.toggle_action = None

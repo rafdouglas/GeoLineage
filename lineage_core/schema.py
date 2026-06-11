@@ -110,7 +110,7 @@ def read_lineage_rows_via_conn(conn: sqlite3.Connection) -> list[dict]:
 
     Silently drops unknown keys (forward compatibility).
     """
-    pragma_rows = conn.execute(f"PRAGMA table_info({LINEAGE_TABLE})").fetchall()
+    pragma_rows = conn.execute(f'PRAGMA table_info("{LINEAGE_TABLE}")').fetchall()
     actual_columns = {row[1] for row in pragma_rows}
     select_columns = sorted(actual_columns & KNOWN_COLUMNS)
 

@@ -49,7 +49,8 @@ def test_record_processing_writes_row(tmp_path):
     assert row["entry_type"] == "processing"
     assert row["output_crs_epsg"] == 4326
     assert row["created_by"] == "alice"
-    assert row["operation_summary"] == "clip"
+    # Summary now includes key scalar params (issue 3.2).
+    assert row["operation_summary"] == "clip (distance=10)"
 
 
 def test_record_processing_json_fields(tmp_path):
@@ -277,3 +278,45 @@ def test_record_processing_via_conn_respects_caller_transaction(tmp_path):
     with sqlite3.connect(gpkg) as conn:
         count = conn.execute(f"SELECT COUNT(*) FROM {LINEAGE_TABLE}").fetchone()[0]
     assert count == 0
+
+
+def test_build_processing_summary_includes_scalar_params():
+    from GeoLineage.lineage_core.recorder import _build_processing_summary
+
+    summary = _build_processing_summary("native:buffer", {"DISTANCE": 10})
+    assert summary == "buffer (DISTANCE=10)"
+
+
+def test_build_processing_summary_skips_non_scalar_and_caps_count():
+    from GeoLineage.lineage_core.recorder import _build_processing_summary
+
+    params = {
+        "INPUT": "/data/in.gpkg",  # included (str scalar)
+        "LAYERS": ["a", "b"],  # skipped (list)
+        "META": {"k": "v"},  # skipped (dict)
+        "A": 1,
+        "B": 2,
+        "C": 3,  # capped at 3 scalar params total
+    }
+    summary = _build_processing_summary("native:tool", params)
+    assert summary.startswith("tool (")
+    # At most 3 key=value pairs.
+    assert summary.count("=") <= 3
+    assert "LAYERS" not in summary
+    assert "META" not in summary
+
+
+def test_build_processing_summary_truncates_long_values():
+    from GeoLineage.lineage_core.recorder import _build_processing_summary
+
+    long_value = "x" * 100
+    summary = _build_processing_summary("native:tool", {"P": long_value})
+    assert "…" in summary
+    assert len(summary) < 100
+
+
+def test_build_processing_summary_no_scalar_params_falls_back():
+    from GeoLineage.lineage_core.recorder import _build_processing_summary
+
+    assert _build_processing_summary("native:dissolve", {"LAYERS": ["a"]}) == "dissolve"
+    assert _build_processing_summary("native:dissolve", {}) == "dissolve"

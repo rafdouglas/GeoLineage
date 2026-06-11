@@ -137,9 +137,32 @@ def record_export(
 
 
 def _build_processing_summary(tool: str, params: dict) -> str:
-    """Build a human-readable summary from tool name and params."""
+    """Build a human-readable summary from tool name and key params.
+
+    Includes up to a few scalar parameters so the summary distinguishes runs
+    of the same tool, e.g. ``buffer (DISTANCE=10)``. Non-scalar params (layers,
+    dicts, lists) and overly long values are skipped/truncated.
+    """
     short_name = tool.split(":")[-1] if ":" in tool else tool
-    return short_name
+    if not isinstance(params, dict):
+        return short_name
+
+    _MAX_PARAMS = 3
+    _MAX_VALUE_LEN = 30
+    scalar_parts: list[str] = []
+    for key, value in params.items():
+        if not isinstance(value, (str, int, float, bool)):
+            continue
+        text = str(value)
+        if len(text) > _MAX_VALUE_LEN:
+            text = text[: _MAX_VALUE_LEN - 1] + "…"
+        scalar_parts.append(f"{key}={text}")
+        if len(scalar_parts) >= _MAX_PARAMS:
+            break
+
+    if not scalar_parts:
+        return short_name
+    return f"{short_name} ({', '.join(scalar_parts)})"
 
 
 def _build_edit_summary_text(edit_summary: dict) -> str:

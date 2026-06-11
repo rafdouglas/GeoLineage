@@ -49,24 +49,19 @@ def compute_node_display_width(node: LineageNode) -> float:
     the layout engine (for spacing) and ``GraphNodeItem`` (for rendering).
     Requires a running QApplication.
     """
-    from qgis.PyQt.QtGui import QFont
-    from qgis.PyQt.QtWidgets import QGraphicsSimpleTextItem
+    from qgis.PyQt.QtGui import QFont, QFontMetricsF
 
     font_bold = QFont("Sans", 9)
     font_bold.setBold(True)
 
     display_name = node.filename.removesuffix(".gpkg")
-    temp_text = QGraphicsSimpleTextItem(display_name)
-    temp_text.setFont(font_bold)
-    filename_width = temp_text.boundingRect().width()
+    filename_width = QFontMetricsF(font_bold).horizontalAdvance(display_name)
 
     op_text = _get_operation_text(node)
     op_width = 0.0
     if op_text:
         font_small = QFont("Sans", 7)
-        temp_op = QGraphicsSimpleTextItem(op_text)
-        temp_op.setFont(font_small)
-        op_width = temp_op.boundingRect().width()
+        op_width = QFontMetricsF(font_small).horizontalAdvance(op_text)
 
     needed_width = max(filename_width, op_width) + _HORIZONTAL_PADDING
     return max(needed_width, _MIN_NODE_WIDTH)
@@ -97,7 +92,7 @@ class GraphNodeItem(_get_base_class()):
         parent_item: QGraphicsItem | None = None,
     ) -> None:
         from qgis.PyQt.QtCore import Qt
-        from qgis.PyQt.QtGui import QBrush, QColor, QFont, QPainterPath, QPen
+        from qgis.PyQt.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainterPath, QPen
         from qgis.PyQt.QtWidgets import QGraphicsSimpleTextItem
 
         super().__init__(parent_item)
@@ -119,18 +114,14 @@ class GraphNodeItem(_get_base_class()):
         font_bold.setBold(True)
 
         # Measure filename width for centering
-        temp_text = QGraphicsSimpleTextItem(display_name)
-        temp_text.setFont(font_bold)
-        filename_width = temp_text.boundingRect().width()
+        filename_width = QFontMetricsF(font_bold).horizontalAdvance(display_name)
 
         # Measure operation text width for centering
         op_text = _get_operation_text(node)
         op_width = 0.0
         if op_text:
             font_small = QFont("Sans", 7)
-            temp_op = QGraphicsSimpleTextItem(op_text)
-            temp_op.setFont(font_small)
-            op_width = temp_op.boundingRect().width()
+            op_width = QFontMetricsF(font_small).horizontalAdvance(op_text)
 
         # Build rounded rect path with calculated size
         path = QPainterPath()

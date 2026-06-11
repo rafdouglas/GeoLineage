@@ -4,6 +4,7 @@ Recording operations live in lineage_core/recorder.py.
 Schema definitions live in lineage_core/schema.py.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -127,8 +128,7 @@ def relink_parent(db_path: str, entry_id: int, old_path: str, new_path: str) -> 
 
     Uses BEGIN IMMEDIATE to prevent concurrent read-modify-write races.
     """
-    conn = sqlite3.connect(db_path)
-    try:
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             f"SELECT parent_files FROM {LINEAGE_TABLE} WHERE id = ?",  # noqa: S608  # nosec B608
@@ -149,8 +149,6 @@ def relink_parent(db_path: str, entry_id: int, old_path: str, new_path: str) -> 
             (json.dumps(updated), entry_id),
         )
         conn.commit()
-    finally:
-        conn.close()
 
 
 def batch_relink_prefix(db_path: str, old_prefix: str, new_prefix: str) -> int:
@@ -159,9 +157,8 @@ def batch_relink_prefix(db_path: str, old_prefix: str, new_prefix: str) -> int:
     Returns the count of modified entries. All updates run within a single
     connection/transaction for atomicity.
     """
-    conn = sqlite3.connect(db_path)
     modified_count = 0
-    try:
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
         conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute(f"SELECT id, parent_files FROM {LINEAGE_TABLE}").fetchall()  # noqa: S608  # nosec B608
         for row_id, raw in rows:
@@ -181,6 +178,4 @@ def batch_relink_prefix(db_path: str, old_prefix: str, new_prefix: str) -> int:
                 )
                 modified_count += 1
         conn.commit()
-    finally:
-        conn.close()
     return modified_count

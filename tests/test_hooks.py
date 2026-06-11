@@ -783,3 +783,42 @@ class TestEditSignalLifecycle:
         # Calling for an unknown layer must be a safe no-op.
         hooks._disconnect_layer_edit_signals("ghost")
         hooks._disconnect_layer_edit_signals("ghost")
+
+
+# --- Dynamic input-key discovery tests (issue 3.3) ---
+
+
+class TestDynamicInputKeys:
+    def test_uses_dynamic_keys_for_algorithm(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from GeoLineage.lineage_core import hooks
+
+        # A registry that reports a non-standard vector input parameter name.
+        param_type = type("QgsProcessingParameterVectorLayer", (), {"name": lambda self: "CUSTOM_INPUT"})
+        fake_alg = MagicMock()
+        fake_alg.parameterDefinitions.return_value = [param_type()]
+        fake_registry = MagicMock()
+        fake_registry.algorithmById.return_value = fake_alg
+        fake_app = MagicMock()
+        fake_app.processingRegistry.return_value = fake_registry
+        monkeypatch.setattr(hooks, "QgsApplication", fake_app)
+
+        class FakeLayer:
+            def id(self):
+                return "layer-42"
+
+        params = {"CUSTOM_INPUT": FakeLayer()}
+        ids = hooks._extract_input_layer_ids(params, "custom:algo")
+        assert ids == ["layer-42"]
+
+    def test_without_algorithm_name_uses_fallback_only(self):
+        from GeoLineage.lineage_core import hooks
+
+        class FakeLayer:
+            def id(self):
+                return "layer-42"
+
+        # CUSTOM_INPUT is not in the fallback keys, so it is ignored.
+        params = {"CUSTOM_INPUT": FakeLayer()}
+        assert hooks._extract_input_layer_ids(params) == []

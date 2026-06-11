@@ -365,3 +365,39 @@ def test_flush_retry_after_failure_no_duplicates(tmp_path):
 
     # Exactly the two chain entries — no duplicates from the failed attempt.
     assert [r[0] for r in rows] == ["a", "b"]
+
+
+# ---------------------------------------------------------------------------
+# 15. test_concurrent_add_flush_smoke (issue 3.9)
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_add_flush_smoke(tmp_path):
+    """Concurrent add/flush/discard must not corrupt internal state or raise."""
+    import threading
+
+    buf = MemoryBuffer()
+    errors: list[Exception] = []
+
+    def worker(n: int) -> None:
+        try:
+            for i in range(50):
+                lid = f"layer_{n}_{i}"
+                buf.add(lid, _make_entry(lid, "native:buffer"))
+                if i > 0:
+                    buf.link(lid, [f"layer_{n}_{i - 1}"])
+                buf.get_chain(lid)
+                if i % 5 == 0:
+                    buf.flush(lid, str(tmp_path / f"out_{n}.gpkg"))
+                if i % 7 == 0:
+                    buf.discard(lid)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Concurrency errors: {errors}"

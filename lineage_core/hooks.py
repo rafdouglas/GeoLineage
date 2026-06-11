@@ -140,16 +140,19 @@ def _get_input_keys(algorithm_name: str) -> tuple[str, ...]:
         return _FALLBACK_INPUT_KEYS
 
 
-def _extract_input_layer_ids(params: dict) -> list[str]:
+def _extract_input_layer_ids(params: dict, algorithm_name: str | None = None) -> list[str]:
     """Extract layer IDs from processing parameters.
 
-    Looks for common parameter names that reference input layers.
-    Handles both single layer and list-of-layers parameters.
-    Returns a list of layer ID strings.
+    When the algorithm name is known, the algorithm's actual vector-input
+    parameter names are discovered from the processing registry (so custom
+    algorithms with non-standard input keys are handled); otherwise the
+    hardcoded fallback keys are used. Handles both single-layer and
+    list-of-layers parameters. Returns a list of layer ID strings.
     """
     ids: list[str] = []
 
-    for key in _FALLBACK_INPUT_KEYS:
+    input_keys = _get_input_keys(algorithm_name) if algorithm_name else _FALLBACK_INPUT_KEYS
+    for key in input_keys:
         value = params.get(key)
         if value is None:
             continue
@@ -274,7 +277,7 @@ def _record_processing_lineage(
     if isinstance(inner, dict):
         params = {**params, **inner}
 
-    input_layer_ids = _extract_input_layer_ids(params)
+    input_layer_ids = _extract_input_layer_ids(params, algorithm_name)
     layer_id, gpkg_path, layer_name = _get_output_layer_info(result, params)
 
     logger.info(
