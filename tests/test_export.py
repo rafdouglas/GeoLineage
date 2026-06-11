@@ -136,6 +136,19 @@ class TestExportDotSyntax:
         assert '\\"' in dot
 
 
+class TestExportDotDanglingEdge:
+    def test_edge_to_absent_node_does_not_crash(self):
+        """An edge whose target is not in graph.nodes still exports cleanly."""
+        nodes = {"/a.gpkg": _make_node("/a.gpkg")}
+        edges = [LineageEdge("/a.gpkg", "/missing.gpkg", 1)]
+        dot = export_dot(_make_graph(nodes, edges))
+
+        # Edge is still emitted (by hashed ids); no exception.
+        assert "->" in dot
+        assert _path_to_id("/a.gpkg") in dot
+        assert _path_to_id("/missing.gpkg") in dot
+
+
 class TestPathToIdCollisions:
     def test_distinct_paths_distinct_ids(self):
         """Paths that previously collapsed to the same id now differ."""

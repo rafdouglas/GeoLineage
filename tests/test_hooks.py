@@ -822,3 +822,166 @@ class TestDynamicInputKeys:
         # CUSTOM_INPUT is not in the fallback keys, so it is ignored.
         params = {"CUSTOM_INPUT": FakeLayer()}
         assert hooks._extract_input_layer_ids(params) == []
+
+
+# --- Tier 4: edit-summary and edit-lineage integration paths ---
+
+
+class TestBuildEditSummary:
+    def test_counts_from_edit_buffer(self):
+        from GeoLineage.lineage_core import hooks
+
+        class Buf:
+            def addedFeatures(self):
+                return {1: 0, 2: 0}
+
+            def changedGeometries(self):
+                return {1: 0}
+
+            def deletedFeatureIds(self):
+                return [9]
+
+            def changedAttributeValues(self):
+                return {1: 0, 2: 0, 3: 0}
+
+        class Layer:
+            def editBuffer(self):
+                return Buf()
+
+        summary = hooks._build_edit_summary(Layer())
+        assert summary == {
+            "features_added": 2,
+            "features_modified": 1,
+            "features_deleted": 1,
+            "attributes_modified": 3,
+        }
+
+    def test_no_buffer_returns_zeros(self):
+        from GeoLineage.lineage_core import hooks
+
+        class Layer:
+            def editBuffer(self):
+                return None
+
+        summary = hooks._build_edit_summary(Layer())
+        assert summary == {
+            "features_added": 0,
+            "features_modified": 0,
+            "features_deleted": 0,
+            "attributes_modified": 0,
+        }
+
+
+class TestRecordEditLineage:
+    def test_calls_record_edit_with_summary(self, monkeypatch):
+        import GeoLineage.lineage_core.recorder as recorder
+        from GeoLineage.lineage_core import hooks
+
+        captured = {}
+        monkeypatch.setattr(recorder, "record_edit", lambda **kw: captured.update(kw) or 1)
+        monkeypatch.setattr(hooks, "_get_created_by", lambda: "tester")
+
+        class Layer:
+            def name(self):
+                return "parcels"
+
+        hooks._record_edit_lineage(Layer(), "/data/x.gpkg", {"features_added": 2})
+
+        assert captured["gpkg_path"] == "/data/x.gpkg"
+        assert captured["layer_name"] == "parcels"
+        assert captured["edit_summary"] == {"features_added": 2}
+        assert captured["created_by"] == "tester"
+
+
+# --- Tier 4: processing.run() wrapper behavior ---
+
+
+class TestProcessingHookWrapper:
+    def setup_method(self):
+        from GeoLineage.lineage_core import hooks
+
+        hooks._local.depth = 0
+        hooks._hook_state["processing_original"] = None
+        hooks._hook_state["processing_wrapper"] = None
+
+    def _install_fake_processing(self, monkeypatch, original_run):
+        import sys
+        import types
+
+        fake_processing = types.ModuleType("processing")
+        fake_processing.run = original_run
+        monkeypatch.setitem(sys.modules, "processing", fake_processing)
+        return fake_processing
+
+    def test_wrapper_calls_original_and_records_at_depth_one(self, monkeypatch):
+        from GeoLineage.lineage_core import hooks
+
+        calls = {"run": 0}
+
+        def original_run(name, params, **kw):
+            calls["run"] += 1
+            return {"OUTPUT": "/out.gpkg"}
+
+        fake = self._install_fake_processing(monkeypatch, original_run)
+
+        recorded = {}
+        monkeypatch.setattr(
+            hooks,
+            "_record_processing_lineage",
+            lambda alg, params, result: recorded.update(alg=alg, params=params, result=result),
+        )
+
+        hooks._install_processing_hook()
+        assert fake.run is not original_run  # patched
+
+        out = fake.run("native:buffer", {"DISTANCE": 5})
+        assert out == {"OUTPUT": "/out.gpkg"}
+        assert calls["run"] == 1
+        assert recorded == {"alg": "native:buffer", "params": {"DISTANCE": 5}, "result": {"OUTPUT": "/out.gpkg"}}
+
+        hooks._uninstall_processing_hook()
+        assert fake.run is original_run  # restored via identity check
+
+    def test_recording_exception_does_not_break_run(self, monkeypatch):
+        from GeoLineage.lineage_core import hooks
+
+        def original_run(name, params, **kw):
+            return {"OUTPUT": "/out.gpkg"}
+
+        fake = self._install_fake_processing(monkeypatch, original_run)
+
+        def boom(*_args, **_kw):
+            raise RuntimeError("recording blew up")
+
+        monkeypatch.setattr(hooks, "_record_processing_lineage", boom)
+
+        hooks._install_processing_hook()
+        # The user's processing result must still come back despite the failure.
+        out = fake.run("native:buffer", {"X": 1})
+        assert out == {"OUTPUT": "/out.gpkg"}
+        hooks._uninstall_processing_hook()
+
+    def test_nested_run_records_once(self, monkeypatch):
+        from GeoLineage.lineage_core import hooks
+
+        record_count = {"n": 0}
+
+        # original_run re-enters processing.run (a nested algorithm call).
+        def original_run(name, params, **kw):
+            if name == "outer":
+                fake.run("inner", {})  # nested depth-2 call
+            return {"OUTPUT": "/out.gpkg"}
+
+        fake = self._install_fake_processing(monkeypatch, original_run)
+        monkeypatch.setattr(
+            hooks,
+            "_record_processing_lineage",
+            lambda *a, **k: record_count.__setitem__("n", record_count["n"] + 1),
+        )
+
+        hooks._install_processing_hook()
+        fake.run("outer", {})
+        hooks._uninstall_processing_hook()
+
+        # Only the outermost (depth-1) call records.
+        assert record_count["n"] == 1

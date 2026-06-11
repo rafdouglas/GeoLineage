@@ -11,6 +11,21 @@ if TYPE_CHECKING:
 from .graph_node_item import STATUS_COLORS
 
 
+def _parse_parent_files(raw) -> list[str]:
+    """Parse the stored parent_files value into a list of paths.
+
+    Qt-free seam so the partial-failure behavior is unit-testable: malformed
+    JSON or a non-list value yields an empty list rather than raising.
+    """
+    if not raw:
+        return []
+    try:
+        parents = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return parents if isinstance(parents, list) else []
+
+
 def _get_base_class():
     """Return QWidget at runtime, object for static analysis."""
     try:
@@ -120,10 +135,7 @@ class DetailPanel(_get_base_class()):
             # Parent files
             raw_parents = entry.get("parent_files", "")
             if raw_parents:
-                try:
-                    parents = json.loads(raw_parents) if isinstance(raw_parents, str) else raw_parents
-                except (json.JSONDecodeError, TypeError):
-                    parents = []
+                parents = _parse_parent_files(raw_parents)
 
                 if parents:
                     entry_layout.addWidget(QLabel("Parents:"))

@@ -174,3 +174,37 @@ class TestExtractDetailFields:
             "parent_files": "",
             "operation_params": "",
         }
+
+
+# ---------------------------------------------------------------------------
+# Behavioral: parent_files parse robustness (Tier 4)
+# ---------------------------------------------------------------------------
+
+
+class TestParseParentFiles:
+    def test_valid_json_list(self):
+        from GeoLineage.lineage_viewer.detail_panel import _parse_parent_files
+
+        assert _parse_parent_files('["/a.gpkg", "/b.gpkg"]') == ["/a.gpkg", "/b.gpkg"]
+
+    def test_already_a_list(self):
+        from GeoLineage.lineage_viewer.detail_panel import _parse_parent_files
+
+        assert _parse_parent_files(["/a.gpkg"]) == ["/a.gpkg"]
+
+    def test_malformed_json_returns_empty(self):
+        from GeoLineage.lineage_viewer.detail_panel import _parse_parent_files
+
+        assert _parse_parent_files("{not json") == []
+
+    def test_non_list_json_returns_empty(self):
+        from GeoLineage.lineage_viewer.detail_panel import _parse_parent_files
+
+        assert _parse_parent_files('"just a string"') == []
+        assert _parse_parent_files("42") == []
+
+    def test_empty_inputs_return_empty(self):
+        from GeoLineage.lineage_viewer.detail_panel import _parse_parent_files
+
+        assert _parse_parent_files("") == []
+        assert _parse_parent_files(None) == []
