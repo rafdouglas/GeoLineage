@@ -9,6 +9,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from ..lineage_core.checksum import compute_checksum_via_conn
+from ..lineage_core.db import is_locked_error
 from ..lineage_core.schema import (
     get_schema_version_via_conn,
     read_lineage_rows_via_conn,
@@ -65,19 +66,37 @@ def _read_file_data(
     try:
         conn = sqlite3.connect(path, timeout=2.0)
         conn.execute("PRAGMA query_only = ON")
-    except sqlite3.OperationalError:
+    except sqlite3.Error:
         return ("busy", [], None)
 
     try:
-        checksum = compute_checksum_via_conn(conn)
-        version = get_schema_version_via_conn(conn)
-        if version is None:
+        # The checksum is isolated from the lineage read: a stale gpkg_contents
+        # row, an odd table name or a non-GeoPackage parent (e.g. a shapefile)
+        # must not hide the file's _lineage entries.
+        checksum: str | None = None
+        try:
+            checksum = compute_checksum_via_conn(conn)
+        except sqlite3.OperationalError as exc:
+            if is_locked_error(exc):
+                return ("busy", [], None)
+            logger.warning("Checksum failed for %s (%s); status detection disabled for this file", path, exc)
+        except sqlite3.DatabaseError as exc:
+            logger.debug("%s is not a SQLite database (%s)", path, exc)
+            return ("raw_input", [], None)
+
+        try:
+            version = get_schema_version_via_conn(conn)
+            if version is None:
+                result = ("raw_input", [], checksum)
+            else:
+                rows = read_lineage_rows_via_conn(conn)
+                result = ("present", rows, checksum)
+        except sqlite3.OperationalError as exc:
+            if is_locked_error(exc):
+                return ("busy", [], None)
             result = ("raw_input", [], checksum)
-        else:
-            rows = read_lineage_rows_via_conn(conn)
-            result = ("present", rows, checksum)
-    except sqlite3.OperationalError:
-        result = ("raw_input", [], None)
+        except sqlite3.DatabaseError:
+            return ("raw_input", [], None)
     finally:
         conn.close()
 
@@ -158,9 +177,15 @@ def build_graph(
                     stored_checksums = json.loads(raw_checksums)
 
             for parent_ref in parent_files:
+                if not isinstance(parent_ref, str):
+                    continue
+                resolved_parent, _ = resolve(parent_ref, project_dir)
+                if os.path.abspath(resolved_parent) == path:
+                    # An operation whose output was written into the same
+                    # GeoPackage as its input: an intra-file step, not an edge.
+                    continue
                 parent_refs.append((parent_ref, entry_id))
                 if parent_ref in stored_checksums:
-                    resolved_parent, _ = resolve(parent_ref, project_dir)
                     recorded = stored_checksums[parent_ref]
                     if resolved_parent not in expected_checksums:
                         expected_checksums[resolved_parent] = recorded

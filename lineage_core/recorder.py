@@ -1,8 +1,8 @@
 import json
 import logging
-import sqlite3
 
-from .schema import ensure_lineage_table
+from .db import connect
+from .schema import ensure_lineage_table_via_conn
 from .settings import LINEAGE_TABLE, LOGGER_NAME
 
 logger = logging.getLogger(f"{LOGGER_NAME}.recorder")
@@ -23,8 +23,9 @@ def record_processing(
 
     Returns the row id of the inserted entry.
     """
-    ensure_lineage_table(gpkg_path)
-    with sqlite3.connect(gpkg_path) as conn:
+    tool = _tool_name(tool)
+    with connect(gpkg_path) as conn:
+        ensure_lineage_table_via_conn(conn)
         cursor = conn.execute(
             f"""INSERT INTO {LINEAGE_TABLE}
             (layer_name, operation_summary, operation_tool, operation_params,
@@ -35,9 +36,9 @@ def record_processing(
                 layer_name,
                 _build_processing_summary(tool, params),
                 tool,
-                json.dumps(params),
+                json.dumps(params, default=str),
                 json.dumps(parents),
-                json.dumps(parent_metadata),
+                json.dumps(parent_metadata, default=str),
                 json.dumps(parent_checksums),
                 output_crs_epsg,
                 created_by,
@@ -59,9 +60,9 @@ def record_edit(
 
     Returns the row id of the inserted entry.
     """
-    ensure_lineage_table(gpkg_path)
     summary_text = _build_edit_summary_text(edit_summary)
-    with sqlite3.connect(gpkg_path) as conn:
+    with connect(gpkg_path) as conn:
+        ensure_lineage_table_via_conn(conn)
         cursor = conn.execute(
             f"""INSERT INTO {LINEAGE_TABLE}
             (layer_name, operation_summary, entry_type, edit_summary, created_by)
@@ -84,8 +85,8 @@ def record_export(
 
     Returns the row id of the inserted entry.
     """
-    ensure_lineage_table(gpkg_path)
-    with sqlite3.connect(gpkg_path) as conn:
+    with connect(gpkg_path) as conn:
+        ensure_lineage_table_via_conn(conn)
         cursor = conn.execute(
             f"""INSERT INTO {LINEAGE_TABLE}
             (layer_name, operation_summary, parent_files, parent_metadata,
@@ -95,7 +96,7 @@ def record_export(
                 layer_name,
                 f"Exported from {parent_path}",
                 json.dumps([parent_path]),
-                json.dumps(parent_metadata),
+                json.dumps(parent_metadata, default=str),
                 json.dumps(parent_checksums),
                 output_crs_epsg,
                 created_by,
@@ -104,8 +105,26 @@ def record_export(
         return cursor.lastrowid
 
 
+def _tool_name(tool) -> str:
+    """Normalise the tool identifier to a string.
+
+    processing.run() accepts a QgsProcessingAlgorithm instance as well as an
+    id string; use the algorithm id when an object is passed.
+    """
+    if isinstance(tool, str):
+        return tool
+    ident = getattr(tool, "id", None)
+    if callable(ident):
+        try:
+            return str(ident())
+        except Exception:  # nosec B110
+            pass
+    return str(tool)
+
+
 def _build_processing_summary(tool: str, params: dict) -> str:
     """Build a human-readable summary from tool name and params."""
+    tool = _tool_name(tool)
     short_name = tool.split(":")[-1] if ":" in tool else tool
     return short_name
 

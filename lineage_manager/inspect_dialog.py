@@ -129,7 +129,9 @@ class InspectDialog(_get_base_class()):
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSortingEnabled(True)
-        self._table.cellChanged.connect(self._on_cell_changed)
+        # itemChanged (not cellChanged): with sorting enabled a row can move as soon
+        # as its text changes, so the entry id and file are read from the item itself.
+        self._table.itemChanged.connect(self._on_item_changed)
         self._table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         parent_layout.addWidget(self._table)
@@ -196,6 +198,9 @@ class InspectDialog(_get_base_class()):
                     item = QTableWidgetItem(str(text))
                     if col not in self._EDITABLE_COLS:
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    else:
+                        item.setData(Qt.UserRole, entry.get("id"))
+                        item.setData(Qt.UserRole + 1, gpkg_path)
                     self._table.setItem(row, col, item)
         finally:
             self._table.setSortingEnabled(True)
@@ -210,27 +215,25 @@ class InspectDialog(_get_base_class()):
             return None
         return file_item.data(Qt.UserRole)
 
-    def _on_cell_changed(self, row: int, col: int) -> None:
-        if self._updating:
+    def _on_item_changed(self, item) -> None:
+        if self._updating or item is None:
             return
-        field = self._EDITABLE_COLS.get(col)
+        field = self._EDITABLE_COLS.get(item.column())
         if field is None:
             return
 
+        from qgis.PyQt.QtCore import Qt
+
         from ..lineage_manager.data_ops import update_entry_field
 
-        id_item = self._table.item(row, self._COL_ID)
-        if id_item is None:
+        entry_id = item.data(Qt.UserRole)
+        gpkg_path = item.data(Qt.UserRole + 1)
+        if entry_id is None or not gpkg_path:
             return
-        gpkg_path = self._get_row_gpkg_path(row)
-        if gpkg_path is None:
-            return
-        entry_id = int(id_item.text())
-        new_value = self._table.item(row, col).text()
         try:
-            update_entry_field(gpkg_path, entry_id, field, new_value)
+            update_entry_field(gpkg_path, int(entry_id), field, item.text())
         except Exception:
-            logger.exception("Failed to update field %s for entry %d", field, entry_id)
+            logger.exception("Failed to update field %s for entry %s", field, entry_id)
 
     def _on_delete(self) -> None:
         from qgis.PyQt.QtWidgets import QMessageBox

@@ -129,9 +129,13 @@ class CleanupDialog(_get_base_class()):
 
         from qgis.PyQt.QtWidgets import QMessageBox
 
-        from ..lineage_manager.data_ops import batch_drop_lineage
+        from ..lineage_manager.data_ops import batch_drop_lineage, list_gpkg_files
 
-        gpkg_count = sum(1 for f in os.listdir(directory) if f.endswith(".gpkg"))
+        if not os.path.isdir(directory):
+            QMessageBox.warning(self, "Invalid Directory", f"Not a directory:\n{directory}")
+            return
+
+        gpkg_count = len(list_gpkg_files(directory))
         if gpkg_count == 0:
             QMessageBox.information(self, "No Files", "No .gpkg files found in directory.")
             return

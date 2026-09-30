@@ -9,9 +9,10 @@ import logging
 import os
 import sqlite3
 
+from ..lineage_core.db import connect
 from ..lineage_core.schema import read_lineage_rows
 from ..lineage_core.settings import LINEAGE_TABLE, LOGGER_NAME, META_TABLE
-from ..lineage_retrieval.path_resolver import resolve
+from ..lineage_retrieval.path_resolver import is_gpkg_filename, resolve
 
 logger = logging.getLogger(f"{LOGGER_NAME}.data_ops")
 
@@ -40,7 +41,7 @@ def update_entry_field(db_path: str, entry_id: int, field: str, value: str) -> N
         raise ValueError(msg)
 
     # field is from a hardcoded allow-list, safe to interpolate into SQL
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute(
             f"UPDATE {LINEAGE_TABLE} SET {field} = ? WHERE id = ?",  # noqa: S608  # nosec B608
             (value, entry_id),
@@ -52,7 +53,7 @@ def delete_entry(db_path: str, entry_id: int) -> bool:
 
     Returns True if a row was deleted, False if no row matched.
     """
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         cursor = conn.execute(
             f"DELETE FROM {LINEAGE_TABLE} WHERE id = ?",  # noqa: S608  # nosec B608
             (entry_id,),
@@ -65,10 +66,19 @@ def drop_lineage_tables(db_path: str) -> None:
 
     Idempotent — no error if tables are already absent.
     """
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute(f"DROP TABLE IF EXISTS {LINEAGE_TABLE}")  # noqa: S608  # nosec B608
         conn.execute(f"DROP TABLE IF EXISTS {META_TABLE}")  # noqa: S608  # nosec B608
     logger.info("Dropped lineage tables from %s", db_path)
+
+
+def list_gpkg_files(directory: str) -> list[str]:
+    """Return the sorted list of GeoPackage file paths directly inside *directory*."""
+    return [
+        os.path.join(directory, filename)
+        for filename in sorted(os.listdir(directory))
+        if is_gpkg_filename(filename) and os.path.isfile(os.path.join(directory, filename))
+    ]
 
 
 def batch_drop_lineage(directory: str) -> list[dict]:
@@ -78,10 +88,7 @@ def batch_drop_lineage(directory: str) -> list[dict]:
     Individual file failures do not abort the batch.
     """
     results = []
-    for filename in sorted(os.listdir(directory)):
-        if not filename.endswith(".gpkg"):
-            continue
-        filepath = os.path.join(directory, filename)
+    for filepath in list_gpkg_files(directory):
         try:
             drop_lineage_tables(filepath)
             results.append({"path": filepath, "success": True, "error": None})
@@ -109,17 +116,19 @@ def find_broken_parents(db_path: str, project_dir: str) -> list[dict]:
         if not isinstance(parents, list):
             continue
         for parent_path in parents:
+            if not isinstance(parent_path, str):
+                continue
             resolved_path, status = resolve(parent_path, project_dir)
-            exists = status == "found"
-            broken.append(
-                {
-                    "entry_id": entry["id"],
-                    "parent_path": parent_path,
-                    "resolved_path": resolved_path,
-                    "exists": exists,
-                }
-            )
-    return [item for item in broken if not item["exists"]]
+            if status != "found":
+                broken.append(
+                    {
+                        "entry_id": entry["id"],
+                        "parent_path": parent_path,
+                        "resolved_path": resolved_path,
+                        "exists": False,
+                    }
+                )
+    return broken
 
 
 def relink_parent(db_path: str, entry_id: int, old_path: str, new_path: str) -> None:
@@ -135,13 +144,16 @@ def relink_parent(db_path: str, entry_id: int, old_path: str, new_path: str) -> 
             (entry_id,),
         ).fetchone()
         if row is None:
+            conn.rollback()
             return
         raw = row[0]
         try:
             parents = json.loads(raw) if isinstance(raw, str) else raw
         except (json.JSONDecodeError, TypeError):
+            conn.rollback()
             return
         if not isinstance(parents, list):
+            conn.rollback()
             return
         updated = [new_path if p == old_path else p for p in parents]
         conn.execute(
@@ -173,7 +185,10 @@ def batch_relink_prefix(db_path: str, old_prefix: str, new_prefix: str) -> int:
                 continue
             if not isinstance(parents, list):
                 continue
-            updated = [new_prefix + p[len(old_prefix) :] if p.startswith(old_prefix) else p for p in parents]
+            updated = [
+                new_prefix + p[len(old_prefix) :] if isinstance(p, str) and p.startswith(old_prefix) else p
+                for p in parents
+            ]
             if updated != parents:
                 conn.execute(
                     f"UPDATE {LINEAGE_TABLE} SET parent_files = ? WHERE id = ?",  # noqa: S608  # nosec B608

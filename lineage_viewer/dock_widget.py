@@ -47,11 +47,15 @@ class LineageDockWidget(_get_dock_base()):
             Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.TopDockWidgetArea | Qt.BottomDockWidgetArea
         )
 
+        from ..lineage_retrieval.cache import LineageCache
+
         self._iface = iface
         self._current_graph = None
         self._current_gpkg_path: str | None = None
         self._project_dir = ""
         self._current_max_depth = 5
+        # mtime-keyed cache so reload/expand do not recompute every checksum
+        self._cache = LineageCache()
 
         # Create components
         from .detail_panel import DetailPanel
@@ -113,7 +117,7 @@ class LineageDockWidget(_get_dock_base()):
             return
 
         try:
-            graph = build_graph(gpkg_path, project_dir, max_depth=self._current_max_depth)
+            graph = build_graph(gpkg_path, project_dir, max_depth=self._current_max_depth, cache=self._cache)
             self._current_graph = graph
             self._scene.set_graph(graph)
             self._on_fit_to_view()
@@ -130,7 +134,7 @@ class LineageDockWidget(_get_dock_base()):
 
         new_depth = self._current_max_depth + 5
         try:
-            sub_graph = build_graph(node_path, self._project_dir, max_depth=new_depth)
+            sub_graph = build_graph(node_path, self._project_dir, max_depth=new_depth, cache=self._cache)
         except Exception:
             logger.exception("Failed to expand node %s", node_path)
             return

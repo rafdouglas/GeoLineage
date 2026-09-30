@@ -133,8 +133,11 @@ class MemoryBuffer:
         _collect(layer_id)
         for node_id in visited:
             self._entries.pop(node_id, None)
+            self._links.pop(node_id, None)
             # Remove this node as a parent reference from all remaining link lists
             for remaining_parents in self._links.values():
                 with contextlib.suppress(ValueError):
                     remaining_parents.remove(node_id)
-            self._links.pop(node_id, None)
+        # Drop link entries that no longer have any parents
+        for node_id in [n for n, parents in self._links.items() if not parents]:
+            del self._links[node_id]
