@@ -255,7 +255,7 @@ class GeoLineagePlugin:
             from .lineage_viewer.dock_widget import LineageDockWidget
 
             self.dock_widget = LineageDockWidget(self.iface, self.iface.mainWindow())
-            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
+            self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
 
         project_dir = QgsProject.instance().homePath() or os.path.dirname(gpkg_path)
         self.dock_widget.show_lineage(gpkg_path, project_dir)
@@ -274,14 +274,14 @@ class GeoLineagePlugin:
             dock_widget=self.dock_widget,
             parent=self.iface.mainWindow(),
         )
-        dlg.exec_()
+        dlg.exec()
 
     def _show_settings_dialog(self) -> None:
         """Open SettingsDialog."""
         from .lineage_manager.settings_dialog import SettingsDialog
 
         dlg = SettingsDialog(parent=self.iface.mainWindow())
-        dlg.exec_()
+        dlg.exec()
 
     def _update_icon(self, enabled: bool) -> None:
         """Update toggle action icon and tooltip based on state."""

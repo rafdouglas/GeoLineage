@@ -182,7 +182,7 @@ ${CHANGELOG:-Initial release.}
 
 ### Requirements
 
-- QGIS 3.34 LTS or later"
+- QGIS 3.34 LTR or later, including QGIS 4.x"
 
 DRAFT_FLAG=""
 if [[ "$ACTION" == "draft" ]]; then

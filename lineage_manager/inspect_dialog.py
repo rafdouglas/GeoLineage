@@ -79,7 +79,7 @@ class InspectDialog(_get_base_class()):
         project_name = QgsProject.instance().baseName() or "unsaved project"
         self.setWindowTitle(f"Manage Lineage — {project_name}")
         self.setMinimumSize(800, 400)
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         layout = QVBoxLayout(self)
 
@@ -124,15 +124,15 @@ class InspectDialog(_get_base_class()):
 
         self._table = QTableWidget(0, len(self._COLUMNS))
         self._table.setHorizontalHeaderLabels(self._COLUMNS)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSortingEnabled(True)
         # itemChanged (not cellChanged): with sorting enabled a row can move as soon
         # as its text changes, so the entry id and file are read from the item itself.
         self._table.itemChanged.connect(self._on_item_changed)
-        self._table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         parent_layout.addWidget(self._table)
 
@@ -178,8 +178,8 @@ class InspectDialog(_get_base_class()):
 
             for row, (gpkg_path, entry) in enumerate(all_rows):
                 file_item = QTableWidgetItem(pathlib.Path(gpkg_path).name)
-                file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
-                file_item.setData(Qt.UserRole, gpkg_path)
+                file_item.setFlags(file_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                file_item.setData(Qt.ItemDataRole.UserRole, gpkg_path)
                 self._table.setItem(row, self._COL_FILE, file_item)
 
                 items = [
@@ -197,10 +197,10 @@ class InspectDialog(_get_base_class()):
                 for col, text in items:
                     item = QTableWidgetItem(str(text))
                     if col not in self._EDITABLE_COLS:
-                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                     else:
-                        item.setData(Qt.UserRole, entry.get("id"))
-                        item.setData(Qt.UserRole + 1, gpkg_path)
+                        item.setData(Qt.ItemDataRole.UserRole, entry.get("id"))
+                        item.setData(Qt.ItemDataRole.UserRole + 1, gpkg_path)
                     self._table.setItem(row, col, item)
         finally:
             self._table.setSortingEnabled(True)
@@ -213,7 +213,7 @@ class InspectDialog(_get_base_class()):
         file_item = self._table.item(row, self._COL_FILE)
         if file_item is None:
             return None
-        return file_item.data(Qt.UserRole)
+        return file_item.data(Qt.ItemDataRole.UserRole)
 
     def _on_item_changed(self, item) -> None:
         if self._updating or item is None:
@@ -226,8 +226,8 @@ class InspectDialog(_get_base_class()):
 
         from ..lineage_manager.data_ops import update_entry_field
 
-        entry_id = item.data(Qt.UserRole)
-        gpkg_path = item.data(Qt.UserRole + 1)
+        entry_id = item.data(Qt.ItemDataRole.UserRole)
+        gpkg_path = item.data(Qt.ItemDataRole.UserRole + 1)
         if entry_id is None or not gpkg_path:
             return
         try:
@@ -255,10 +255,10 @@ class InspectDialog(_get_base_class()):
             self,
             "Confirm Delete",
             f"Delete lineage entry {entry_id}?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
         delete_entry(gpkg_path, entry_id)
@@ -268,7 +268,7 @@ class InspectDialog(_get_base_class()):
         from .cleanup_dialog import CleanupDialog
 
         dlg = CleanupDialog(self)
-        dlg.exec_()
+        dlg.exec()
         self._load_entries()
 
     def _on_relink(self) -> None:
@@ -285,7 +285,7 @@ class InspectDialog(_get_base_class()):
                 self._iface.messageBar().pushWarning("GeoLineage", "Save the project first to relink parent paths.")
             return
         dlg = RelinkDialog(gpkg_path, self._project_dir, self)
-        dlg.exec_()
+        dlg.exec()
         self._load_entries()
 
     def _on_view_in_graph(self) -> None:
@@ -312,4 +312,4 @@ class InspectDialog(_get_base_class()):
         menu.addAction("Relink...", self._on_relink)
         if self._dock_widget is not None:
             menu.addAction("View in Graph", self._on_view_in_graph)
-        menu.exec_(self._table.viewport().mapToGlobal(pos))
+        menu.exec(self._table.viewport().mapToGlobal(pos))

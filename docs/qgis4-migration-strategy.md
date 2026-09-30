@@ -2,6 +2,10 @@
 
 Prepared September 2026 against GeoLineage v0.7.0. Facts about QGIS come from the QGIS wiki page "Plugin migration to be compatible with Qt5 and Qt6" (revision of 2 April 2026), the `scripts/pyqt5_to_pyqt6/pyqt5_to_pyqt6.py` script on QGIS master, the QGIS source tree on the `release-3_44`, `release-4_0`, `release-4_2` and `master` branches, and the QGIS.org blog posts of April and October 2025 on the 4.0 schedule. The dry-run numbers below come from running the official migration script against this repository.
 
+## Status
+
+Phases 0 and 1 below, and the hook fallback part of Phase 2, are implemented on the `claude/wizardly-meitner-25rt7w` branch (version 0.8.0): the migration script was applied, the patterns it cannot see were fixed by hand, `metadata.txt` declares `qgisMaximumVersion=4.99`, a `qt6-compat` CI job runs the script in dry-run mode as a guard, `tests/test_qt6_compat.py` covers the manual patterns, the toolbox hook falls back to `AlgorithmWidget` on QGIS 4.2+, and GUI exports use `iface.layerSavedAs`. Still open: the Docker-based T2 integration tier, the history-registry replacement for the dialog patch, and the manual verification matrix of Phase 3, none of which can be done without a QGIS runtime.
+
 ## Where QGIS stands
 
 QGIS 4.0 "Norrköping" was released on 6 March 2026. It is built on Qt 6 only (minimum Qt 6.4 on master, which now reports itself as 4.3.0), and there is no Qt 5 build of the 4.x line. The first long-term release of the new series is 4.2, scheduled to enter the LTR repositories in October 2026, so most institutional users will move during the coming year rather than immediately. QGIS 3.44 is the last 3.x release and the last 3.x LTR; 3.40 LTR support was extended to May 2026 and has now ended. Qt 6 builds of the 3.x release branches exist for Windows through OSGeo4W and for Debian, which makes it possible to test dual-compatible code on a 3.x runtime with PyQt6.

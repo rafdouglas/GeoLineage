@@ -40,7 +40,7 @@ class CleanupDialog(_get_base_class()):
         super().__init__(parent)
         self.setWindowTitle("Cleanup Lineage Tables")
         self.setMinimumWidth(500)
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         layout = QVBoxLayout(self)
 
@@ -112,10 +112,10 @@ class CleanupDialog(_get_base_class()):
             self,
             "Confirm Cleanup",
             f"Drop lineage tables from:\n{path}\n\nThis cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
         try:
@@ -144,10 +144,10 @@ class CleanupDialog(_get_base_class()):
             self,
             "Confirm Batch Cleanup",
             f"Drop lineage tables from {gpkg_count} GeoPackage file(s) in:\n{directory}\n\nThis cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
         results = batch_drop_lineage(directory)

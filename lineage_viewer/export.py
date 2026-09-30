@@ -98,11 +98,11 @@ def export_png(scene: QGraphicsScene, path: str, dpi: int = 150) -> None:
         width = int(width * ratio)
         height = int(height * ratio)
 
-    image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
-    image.fill(Qt.white)
+    image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.white)
 
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     scene.render(painter, QRectF(0, 0, width, height), rect)
     painter.end()
 

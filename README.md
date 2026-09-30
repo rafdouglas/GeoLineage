@@ -19,7 +19,7 @@ A QGIS plugin that tracks data lineage in GeoPackage files. Every processing ste
 
 ## Requirements
 
-- **QGIS 3.34 LTS** or later
+- **QGIS 3.34 LTR** or later, including **QGIS 4.x** (Qt 6)
 - Python 3.10+
 
 ## Installation

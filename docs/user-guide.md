@@ -35,7 +35,7 @@ GeoLineage is a QGIS plugin that automatically records the history of your GeoPa
 
 | Requirement | Minimum Version |
 |-------------|-----------------|
-| QGIS | 3.34 LTS |
+| QGIS | 3.34 LTR (QGIS 4.x supported) |
 | Python | 3.10 |
 | Operating System | Linux, macOS, Windows |
 

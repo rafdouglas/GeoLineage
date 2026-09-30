@@ -230,7 +230,7 @@ class LineageGraphScene(_get_base_class()):
             menu.addSeparator()
             expand_action = menu.addAction("Expand")
 
-        chosen = menu.exec_(event.screenPos())
+        chosen = menu.exec(event.screenPos())
         if chosen == copy_action:
             from qgis.PyQt.QtWidgets import QApplication
 

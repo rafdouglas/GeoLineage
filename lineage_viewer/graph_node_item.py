@@ -147,7 +147,7 @@ class GraphNodeItem(_get_base_class()):
         # Border
         pen = QPen(QColor("#333333"), 1.5)
         if node.truncated:
-            pen.setStyle(Qt.DashLine)
+            pen.setStyle(Qt.PenStyle.DashLine)
         self.setPen(pen)
         self._default_pen = QPen(pen)
 
@@ -173,10 +173,12 @@ class GraphNodeItem(_get_base_class()):
             trunc_item.setFont(QFont("Sans", 10))
             trunc_item.setPos(node_width - 20, node_height - 18)
 
-        # Interaction flags
-        self.setFlag(self.ItemIsSelectable, True)
-        self.setFlag(self.ItemIsMovable, True)
-        self.setFlag(self.ItemSendsGeometryChanges, True)
+        # Interaction flags (scoped enums: required on PyQt6, accepted on PyQt5)
+        from qgis.PyQt.QtWidgets import QGraphicsItem
+
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
 
         # Drag state
@@ -214,7 +216,9 @@ class GraphNodeItem(_get_base_class()):
 
     def itemChange(self, change, value):
         """Handle position changes for drag: z-ordering, Shift-constrain, edge updates."""
-        if change == self.ItemPositionChange:
+        from qgis.PyQt.QtWidgets import QGraphicsItem
+
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
             if not self._drag_started:
                 self._drag_started = True
                 self._original_z = self.zValue()
@@ -225,7 +229,7 @@ class GraphNodeItem(_get_base_class()):
             from qgis.PyQt.QtCore import Qt
             from qgis.PyQt.QtWidgets import QApplication
 
-            if QApplication.queryKeyboardModifiers() & Qt.ShiftModifier:
+            if QApplication.queryKeyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
                 if self._drag_origin is not None:
                     dx = abs(value.x() - self._drag_origin[0])
                     dy = abs(value.y() - self._drag_origin[1])
@@ -238,7 +242,7 @@ class GraphNodeItem(_get_base_class()):
             else:
                 self._shift_axis = None
 
-        elif change == self.ItemPositionHasChanged:
+        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             for edge in self._connected_edges:
                 edge.update_path()
 

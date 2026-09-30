@@ -44,7 +44,10 @@ class LineageDockWidget(_get_dock_base()):
 
         QDockWidget.__init__(self, "Lineage Graph Viewer", parent)
         self.setAllowedAreas(
-            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.TopDockWidgetArea | Qt.BottomDockWidgetArea
+            Qt.DockWidgetArea.LeftDockWidgetArea
+            | Qt.DockWidgetArea.RightDockWidgetArea
+            | Qt.DockWidgetArea.TopDockWidgetArea
+            | Qt.DockWidgetArea.BottomDockWidgetArea
         )
 
         from ..lineage_retrieval.cache import LineageCache
@@ -75,7 +78,7 @@ class LineageDockWidget(_get_dock_base()):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self._toolbar)
 
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._view)
         splitter.addWidget(self._detail_panel)
         splitter.setStretchFactor(0, 7)
@@ -169,7 +172,7 @@ class LineageDockWidget(_get_dock_base()):
 
         rect = self._scene.fit_in_view()
         if not rect.isNull():
-            self._view.fitInView(rect, Qt.KeepAspectRatio)
+            self._view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
 
     def _on_zoom_in(self) -> None:
         self._view.scale(1.2, 1.2)
@@ -262,8 +265,8 @@ class _LineageGraphView(_get_view_base()):  # noqa: F811
         from qgis.PyQt.QtWidgets import QGraphicsView
 
         super().__init__(scene, parent)
-        self.setDragMode(QGraphicsView.NoDrag)
-        self.setCursor(Qt.OpenHandCursor)
+        self.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
         self._panning = False
         self._pan_start = None
         self._pan_total_dist = 0.0
@@ -271,11 +274,11 @@ class _LineageGraphView(_get_view_base()):  # noqa: F811
     def mousePressEvent(self, event) -> None:
         from qgis.PyQt.QtCore import Qt
 
-        if event.button() == Qt.RightButton:
+        if event.button() == Qt.MouseButton.RightButton:
             self._panning = True
             self._pan_start = event.pos()
             self._pan_total_dist = 0.0
-            self.setCursor(Qt.ClosedHandCursor)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -294,9 +297,9 @@ class _LineageGraphView(_get_view_base()):  # noqa: F811
     def mouseReleaseEvent(self, event) -> None:
         from qgis.PyQt.QtCore import Qt
 
-        if event.button() == Qt.RightButton and self._panning:
+        if event.button() == Qt.MouseButton.RightButton and self._panning:
             self._panning = False
-            self.setCursor(Qt.OpenHandCursor)
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
             if self._pan_total_dist < 4:
                 # No real drag -- let context menu fire
                 super().mouseReleaseEvent(event)

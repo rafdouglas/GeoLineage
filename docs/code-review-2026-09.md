@@ -4,6 +4,10 @@ This review covers the whole plugin as of commit `26980ec` on the `main` line: `
 
 The plugin is in good shape overall. The pure-Python core is well factored, exception-isolated, and unusually well tested for a QGIS plugin. The problems concentrate in two places: the interception layer in `hooks.py`, which leans on private QGIS internals and on monkey-patching that the QGIS GUI never routes through, and a handful of edge cases in the file-level checksum and graph code. Several user-guide statements no longer match what the code does.
 
+## Status
+
+All findings below except T1 (the integration test tier) and the per-table checksum redesign in C3 were fixed on the `claude/wizardly-meitner-25rt7w` branch; `tests/test_review_fixes.py` holds one regression test per fix. H2 was addressed with the `AlgorithmWidget` fallback; the history-registry approach remains the recommended follow-up once a T2 harness exists to validate it.
+
 ## Summary
 
 | ID | Area | Severity | Confidence | Finding |

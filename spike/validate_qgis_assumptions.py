@@ -28,7 +28,6 @@ print("=" * 70)
 sys.path.insert(0, "/app/share/qgis/python/plugins")
 sys.path.insert(0, "/app/share/qgis/python")
 
-from PyQt5.QtCore import QVariant
 from qgis.core import (
     QgsApplication,
     QgsCoordinateReferenceSystem,
@@ -40,6 +39,7 @@ from qgis.core import (
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
+from qgis.PyQt.QtCore import QVariant
 
 # Init headless QGIS application
 app = QgsApplication([], False)
