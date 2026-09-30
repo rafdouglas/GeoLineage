@@ -45,7 +45,7 @@ class RelinkDialog(_get_base_class()):
 
         self.setWindowTitle(f"Relink Broken Parents: {os.path.basename(gpkg_path)}")
         self.setMinimumSize(600, 400)
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         layout = QVBoxLayout(self)
 

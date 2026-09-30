@@ -6,6 +6,11 @@ from ..lineage_core.settings import LOGGER_NAME
 logger = logging.getLogger(f"{LOGGER_NAME}.path_resolver")
 
 
+def is_gpkg_filename(path: str | None) -> bool:
+    """Return True when *path* has a GeoPackage extension (case-insensitive)."""
+    return bool(path) and isinstance(path, str) and path.lower().endswith(".gpkg")
+
+
 def extract_gpkg_path(source: str) -> str | None:
     """Extract the .gpkg file path from a QGIS layer source URI.
 
@@ -13,12 +18,12 @@ def extract_gpkg_path(source: str) -> str | None:
     '/path/to/file.gpkg|layername=tablename'
 
     Returns the path if the source refers to a GeoPackage file,
-    or None otherwise.
+    or None otherwise. The extension check is case-insensitive.
     """
     if not source:
         return None
     path = source.split("|")[0]
-    return path if path.endswith(".gpkg") else None
+    return path if is_gpkg_filename(path) else None
 
 
 def resolve(parent_ref: str, project_dir: str) -> tuple[str, str]:

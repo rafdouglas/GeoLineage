@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 
+from .db import connect
 from .settings import LINEAGE_TABLE, LOGGER_NAME, META_TABLE, SCHEMA_VERSION
 
 logger = logging.getLogger(f"{LOGGER_NAME}.schema")
@@ -22,6 +23,38 @@ KNOWN_COLUMNS = {
     "qgis_sketcher",
 }
 
+# LINEAGE_TABLE, META_TABLE, SCHEMA_VERSION are module-level constants — safe to interpolate.
+_DDL = f"""
+    CREATE TABLE IF NOT EXISTS {LINEAGE_TABLE} (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        layer_name          TEXT NOT NULL,
+        operation_summary   TEXT NOT NULL,
+        operation_tool      TEXT,
+        operation_params    TEXT,
+        parent_files        TEXT,
+        parent_metadata     TEXT,
+        parent_checksums    TEXT,
+        output_crs_epsg     INTEGER,
+        created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_by          TEXT,
+        entry_type          TEXT NOT NULL DEFAULT 'processing',
+        edit_summary        TEXT,
+        qgis_sketcher       TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS {META_TABLE} (
+        key   TEXT PRIMARY KEY,
+        value TEXT
+    );
+
+    INSERT OR IGNORE INTO {META_TABLE} VALUES ('schema_version', '{SCHEMA_VERSION}');
+"""  # noqa: S608  # nosec B608
+
+
+def ensure_lineage_table_via_conn(conn: sqlite3.Connection) -> None:
+    """Create _lineage and _lineage_meta tables on an existing connection. Idempotent."""
+    conn.executescript(_DDL)
+
 
 def ensure_lineage_table(db_path: str) -> None:
     """Create _lineage and _lineage_meta tables if they don't exist. Idempotent.
@@ -29,41 +62,15 @@ def ensure_lineage_table(db_path: str) -> None:
     IMPORTANT: Do NOT register _lineage in gpkg_contents.
     Uses CREATE TABLE IF NOT EXISTS for idempotency.
     """
-    # LINEAGE_TABLE, META_TABLE, SCHEMA_VERSION are module-level constants — safe to interpolate.
-    ddl = f"""
-        CREATE TABLE IF NOT EXISTS {LINEAGE_TABLE} (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            layer_name          TEXT NOT NULL,
-            operation_summary   TEXT NOT NULL,
-            operation_tool      TEXT,
-            operation_params    TEXT,
-            parent_files        TEXT,
-            parent_metadata     TEXT,
-            parent_checksums    TEXT,
-            output_crs_epsg     INTEGER,
-            created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            created_by          TEXT,
-            entry_type          TEXT NOT NULL DEFAULT 'processing',
-            edit_summary        TEXT,
-            qgis_sketcher       TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS {META_TABLE} (
-            key   TEXT PRIMARY KEY,
-            value TEXT
-        );
-
-        INSERT OR IGNORE INTO {META_TABLE} VALUES ('schema_version', '{SCHEMA_VERSION}');
-    """  # noqa: S608  # nosec B608
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript(ddl)
+    with connect(db_path) as conn:
+        ensure_lineage_table_via_conn(conn)
     logger.debug("Ensured lineage tables exist in %s", db_path)
 
 
 def get_schema_version(db_path: str) -> str | None:
     """Read schema version from _lineage_meta. Returns None if table doesn't exist."""
     try:
-        with sqlite3.connect(db_path) as conn:
+        with connect(db_path, query_only=True) as conn:
             return get_schema_version_via_conn(conn)
     except sqlite3.OperationalError:
         return None
@@ -86,7 +93,7 @@ def read_lineage_rows(db_path: str) -> list[dict]:
     operation_params, parent_files, parent_metadata, parent_checksums, output_crs_epsg,
     created_at, created_by, entry_type, edit_summary, qgis_sketcher
     """
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path, query_only=True) as conn:
         return read_lineage_rows_via_conn(conn)
 
 

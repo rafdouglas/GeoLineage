@@ -46,6 +46,38 @@ jobs:
           name: coverage-report
           path: .coverage
 
+  qt6-compat:
+    # Guard against Qt5-only spellings (unscoped enums, exec_, PyQt5 imports)
+    # creeping back in. Runs the official QGIS migration script in dry-run
+    # mode; any reported change fails the job. Without the qgis module the
+    # script only checks Qt enums, which is enough for a guard.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Qt runtime libraries
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
+
+      - name: Install PyQt6 and script dependencies
+        run: pip install PyQt6 PyQt6-QScintilla astpretty tokenize-rt
+
+      - name: Fetch pyqt5_to_pyqt6.py from QGIS
+        run: curl -sSL -o pyqt5_to_pyqt6.py https://raw.githubusercontent.com/qgis/QGIS/master/scripts/pyqt5_to_pyqt6/pyqt5_to_pyqt6.py
+
+      - name: Check for Qt5-only code
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python pyqt5_to_pyqt6.py --dry_run . 2>&1 | grep -v "QGIS classes not available" | tee qt6-findings.txt
+          if grep -q . qt6-findings.txt; then
+            echo "::error::Qt5-only code found; use scoped enums / exec() (see docs/qgis4-migration-strategy.md)"
+            exit 1
+          fi
+
   # -----------------------------------------------------------
   # SPLIT-POINT: Extract release into .github/workflows/release.yml
   # when T2 QGIS tests are added (to keep test and release triggers

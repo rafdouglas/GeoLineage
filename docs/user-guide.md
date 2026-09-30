@@ -35,7 +35,7 @@ GeoLineage is a QGIS plugin that automatically records the history of your GeoPa
 
 | Requirement | Minimum Version |
 |-------------|-----------------|
-| QGIS | 3.34 LTS |
+| QGIS | 3.34 LTR (QGIS 4.x supported) |
 | Python | 3.10 |
 | Operating System | Linux, macOS, Windows |
 
@@ -69,10 +69,10 @@ After enabling, a **GeoLineage** menu appears in the QGIS menu bar and a toggle 
 
 The quickest way to get going:
 
-1. **Enable recording** — click the GeoLineage toolbar button (or **GeoLineage → Enable Recording**).
+1. **Enable recording** — click the GeoLineage toolbar button (or the first entry of the **GeoLineage** plugin menu).
 2. **Set your username** — open **GeoLineage → Settings** and enter your name. This is stored in every lineage entry for audit purposes.
 3. **Work normally** — run processing tools, edit layer features, or export layers as you always have.
-4. **View the history** — open **GeoLineage → Open Lineage Viewer** and select a GeoPackage to see its ancestry graph.
+4. **View the history** — select a GeoPackage layer and open **GeoLineage → Show Lineage Graph** to see its ancestry graph.
 
 ---
 
@@ -83,11 +83,11 @@ The quickest way to get going:
 Lineage recording is **off by default**. Toggle it on and off using:
 
 - The **GeoLineage toolbar button**, or
-- **GeoLineage → Enable Recording** in the menu bar.
+- The first entry of the **GeoLineage** plugin menu (its label reflects the current state).
 
 When recording is active the toolbar button appears pressed/highlighted. All operations performed while recording is active will be captured. Operations performed while recording is off are not recorded.
 
-> **Tip:** Recording is remembered per QGIS project. If you save a project while recording is on, it will resume automatically when you reopen the project.
+> **Tip:** Recording is remembered per QGIS project. If you save a project while recording is on, it will resume automatically when you reopen the project, and a project saved with recording off opens with recording off.
 
 ---
 
@@ -116,9 +116,8 @@ If you open a GeoPackage layer in edit mode and commit changes (add, modify, or 
 
 The edit entry captures:
 - The layer name
-- The type of edit (features added / modified / deleted)
+- The counts of features added, modified and deleted, and of attribute changes
 - Your username and a timestamp
-- A checksum of the data after the edit
 
 ---
 
@@ -127,9 +126,11 @@ The edit entry captures:
 When you use **Layer → Save As...** (Save Features As) to export a layer to a new GeoPackage, GeoLineage records an export entry that links the new file back to its source.
 
 The export entry captures:
-- The source GeoPackage path
+- The source GeoPackage path and a checksum of its data
 - The output GeoPackage path
 - Your username and a timestamp
+
+Exports to formats other than GeoPackage are not recorded, because the lineage table lives inside the output file.
 
 This ensures that derived datasets maintain a traceable link to their origin even when data is copied to a new file.
 
@@ -153,10 +154,11 @@ In this case, GeoLineage's **memory buffer** tracks all three steps. When the fi
 
 Open the lineage graph for any GeoPackage:
 
-1. **GeoLineage → Open Lineage Viewer** in the menu bar, or
-2. Right-click a GeoPackage layer in the Layers panel and choose **Show Lineage**.
+1. Select a GeoPackage layer and choose **GeoLineage → Show Lineage Graph** in the plugin menu, or
+2. Right-click a GeoPackage layer in the Layers panel and choose **Show Lineage**, or
+3. Select a row in **Manage Lineage...** and click **View in Graph**.
 
-The viewer opens as a dock panel on the right side of QGIS. Use the file picker at the top of the dock to select a different GeoPackage.
+The viewer opens as a dock panel on the right side of QGIS. Use **Reload** in the viewer toolbar to refresh it after the file changes.
 
 ---
 
@@ -166,27 +168,33 @@ The graph shows all ancestor datasets as nodes connected by arrows. The queried 
 
 | Action | How |
 |--------|-----|
-| Pan | Click and drag on empty canvas |
-| Zoom | Mouse wheel or pinch gesture |
-| Select a node | Click on it |
-| Move a node | Click and drag the node |
+| Pan | Right-click and drag on the canvas |
+| Zoom | **Zoom In** / **Zoom Out** / **Fit to View** in the viewer toolbar |
+| Select a node | Left-click on it |
+| Node context menu | Right-click a node (copy path, open file location, load in QGIS, expand) |
+| Load a node as a layer | Double-click it |
+| Move a node | Left-click and drag the node |
 | Constrain to axis while dragging | Hold **Shift** while dragging |
 | Reset layout | Click the **Reset Layout** button in the toolbar |
+| Find nodes | Type part of a filename in the search box |
 
 ---
 
 ### Node Colors and Status
 
-Each node is color-coded based on whether the file it represents can be found:
+Each node is color-coded based on whether the file it represents can be found and whether it still matches the data its children were built from:
 
 | Color | Status | Meaning |
 |-------|--------|---------|
-| Blue | `present` | File exists at the recorded path |
-| Green | `raw_input` | Original source data (no recorded parent) |
-| Yellow | `missing` | File cannot be found at the recorded path |
-| Grey | `busy` | File is currently locked or being written |
+| Green | `present` | File exists and has a `_lineage` table |
+| Blue | `raw_input` | File exists but has no lineage (original source data) |
+| Yellow | `modified` | File exists but its data changed since a child was derived from it |
+| Red | `missing` | File cannot be found at the recorded path |
+| Orange | `busy` | File is currently locked or being written |
 
-If you see yellow nodes, use the [Relink Dialog](#relink-dialog) to update the path to the file's new location.
+The node you opened the viewer from has an amber outline; search matches get a yellow outline. A dashed border marks a node whose ancestry was truncated at the depth limit; right-click it and choose **Expand** to load more.
+
+If you see red nodes, use the [Relink Dialog](#relink-dialog) to update the path to the file's new location.
 
 ---
 
@@ -196,18 +204,14 @@ Clicking any node opens a detail panel on the right side of the viewer showing:
 
 - **Filename** — the base name of the file
 - **Full path** — absolute path on disk
-- **Operation type** — processing / edit / export
-- **Tool** — the algorithm or operation name
-- **Timestamp** — when the operation was recorded
-- **Username** — who performed the operation
-- **Parameters** — full parameter list (for processing operations)
-- **Checksum** — SHA-256 hash of the data at the time of recording
+- **Status** — see the colour table above
+- One block per lineage entry with its type (processing / manual_edit / export), tool, user, timestamp (UTC), clickable parent links and a collapsible parameter list
 
 ---
 
 ### Exporting the Graph
 
-Use the **Export** button in the viewer toolbar to save the graph in one of three formats:
+Use the **Export PNG**, **Export SVG** and **Export DOT** buttons in the viewer toolbar to save the graph:
 
 | Format | Use case |
 |--------|----------|
@@ -219,16 +223,17 @@ Use the **Export** button in the viewer toolbar to save the graph in one of thre
 
 ## Managing Lineage Records
 
-### Inspect Dialog
+### Manage Lineage Dialog
 
-**GeoLineage → Inspect Lineage**
+**GeoLineage → Manage Lineage...**
 
-Opens a table showing all `_lineage` entries for a GeoPackage. You can:
+Opens a table with the `_lineage` entries of every GeoPackage loaded in the current project. You can:
 
-- Browse all recorded operations sorted by date
-- Edit the **Operation Summary** field of any entry to add notes
-- Delete individual entries or a batch of entries
-- Remove all lineage data from the file (drop tables)
+- Sort by any column
+- Edit the **Summary** and **Edit Summary** cells to add notes
+- Delete the selected entry (also from the right-click menu)
+- Open the [Cleanup Dialog](#cleanup-dialog) or the [Relink Dialog](#relink-dialog)
+- Jump to the selected file in the graph viewer with **View in Graph**
 
 > **Note:** Deleting lineage entries is permanent. Use this only to clean up test records or errors, not routine auditing.
 
@@ -240,30 +245,29 @@ Opens a table showing all `_lineage` entries for a GeoPackage. You can:
 
 | Setting | Description |
 |---------|-------------|
-| **Username** | Your name or identifier. Stored in every lineage entry you create. |
-| **Recording enabled** | Toggle recording on/off (same as toolbar button). |
+| **Record username in lineage entries** | When checked, the username below is stored in every lineage entry you create. |
+| **Username** | Your name or identifier; defaults to your system user name when left empty. |
 
 ---
 
 ### Cleanup Dialog
 
-**GeoLineage → Cleanup Lineage**
+Open it from **Manage Lineage... → Cleanup...**
 
-Scans a GeoPackage for orphaned lineage entries — records that reference files or layers that no longer exist. You can review and bulk-delete orphaned entries to keep the `_lineage` table tidy.
+Removes the `_lineage` and `_lineage_meta` tables from a single GeoPackage, or from every GeoPackage directly inside a directory. This deletes the recorded history and cannot be undone; the layer data itself is not touched.
 
 ---
 
 ### Relink Dialog
 
-**GeoLineage → Relink Lineage**
+Open it from **Manage Lineage... → Relink...** with a row of the affected GeoPackage selected (the project must be saved so relative paths can be resolved).
 
-If files have been moved or renamed, their lineage references become broken (yellow nodes in the viewer). The Relink Dialog lets you remap old paths to new locations without losing any recorded history.
+If files have been moved or renamed, their lineage references become broken (red nodes in the viewer). The Relink Dialog lets you remap old paths to new locations without losing any recorded history.
 
 Steps:
-1. Open **GeoLineage → Relink Lineage** and select the affected GeoPackage.
-2. The dialog lists all parent references that cannot be resolved.
-3. For each broken reference, click **Browse** to select the new file location.
-4. Click **Apply** to update all matching entries.
+1. The dialog lists all parent references of the file that cannot be resolved.
+2. Select a broken reference, click **Browse New Location** to pick the file's new path, then click **Relink Selected**.
+3. For files that all moved together, use **Batch Prefix Replacement**: enter the old and new path prefix and click **Batch Relink**.
 
 ---
 
@@ -306,4 +310,4 @@ Currently, lineage is stored in GeoPackage files only. Operations involving Shap
 
 **How do I disable recording temporarily?**
 
-Click the toolbar button to toggle recording off. You can also disable it permanently for a project via **GeoLineage → Settings**.
+Click the toolbar button to toggle recording off. The state is saved with the project, so a project saved with recording off stays off when reopened.

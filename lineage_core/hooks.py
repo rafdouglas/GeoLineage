@@ -36,6 +36,10 @@ _hook_state: dict[str, Any] = {
     "processing_wrapper": None,
     "filewriter_original": None,
     "filewriter_wrapper": None,
+    "dialog_class": None,
+    "dialog_original_finish": None,
+    "dialog_wrapper_finish": None,
+    "iface": None,
     "signal_connections": [],
     "installed": False,
 }
@@ -93,23 +97,65 @@ def _is_gpkg_path(path: str | None) -> bool:
     return _strip_layername(path).lower().endswith(".gpkg")
 
 
-def _resolve_output_layer_definition(obj: Any) -> Any:
-    """Unwrap QgsProcessingOutputLayerDefinition to a plain string path.
+def _layername_from_uri(uri: str) -> str | None:
+    """Return the ``layername=`` value of a QGIS data source URI, if present."""
+    if not isinstance(uri, str):
+        return None
+    for part in uri.split("|")[1:]:
+        key, sep, value = part.partition("=")
+        if sep and key.strip().lower() == "layername" and value.strip():
+            return value.strip()
+    return None
 
-    If obj has a .sink attribute with a .staticValue() method, call it to
-    extract the underlying string path. If .sink is itself a string, return
-    it directly. Otherwise return obj unchanged.
+
+def _algorithm_id(algorithm: Any) -> str:
+    """Return the algorithm id for a string or a QgsProcessingAlgorithm instance."""
+    if isinstance(algorithm, str):
+        return algorithm
+    ident = getattr(algorithm, "id", None)
+    if callable(ident):
+        try:
+            return str(ident())
+        except Exception:  # nosec B110
+            pass
+    return str(algorithm)
+
+
+def _resolve_output_layer_definition(obj: Any) -> Any:
+    """Unwrap processing parameter wrappers to a plain value.
+
+    Handles:
+    - QgsProcessingOutputLayerDefinition: ``.sink`` is a string or a QgsProperty
+      with ``staticValue()``.
+    - QgsProcessingFeatureSourceDefinition ("selected features only" inputs):
+      ``.source`` is a QgsProperty (not callable, unlike QgsMapLayer.source()).
+    - The dict form ``{"source": ..., "selectedFeaturesOnly": ...}`` that
+      ``QgsProcessingAlgorithm.asMap()`` produces for the same definition.
+
+    Anything else is returned unchanged.
     """
-    if not hasattr(obj, "sink"):
+    if isinstance(obj, dict) and "source" in obj:
+        return _resolve_output_layer_definition(obj["source"])
+
+    if hasattr(obj, "sink"):
+        sink = obj.sink
+        if isinstance(sink, str):
+            logger.debug("Resolved OutputLayerDefinition with string sink: %s", sink)
+            return sink
+        if hasattr(sink, "staticValue") and callable(sink.staticValue):
+            value = sink.staticValue()
+            logger.debug("Resolved OutputLayerDefinition via staticValue: %s", value)
+            return value
         return obj
-    sink = obj.sink
-    if isinstance(sink, str):
-        logger.debug("Resolved OutputLayerDefinition with string sink: %s", sink)
-        return sink
-    if hasattr(sink, "staticValue") and callable(sink.staticValue):
-        value = sink.staticValue()
-        logger.debug("Resolved OutputLayerDefinition via staticValue: %s", value)
-        return value
+
+    source = getattr(obj, "source", None)
+    if source is not None and not callable(source):
+        if isinstance(source, str):
+            return source
+        if hasattr(source, "staticValue") and callable(source.staticValue):
+            value = source.staticValue()
+            logger.debug("Resolved FeatureSourceDefinition via staticValue: %s", value)
+            return value
     return obj
 
 
@@ -140,27 +186,31 @@ def _get_input_keys(algorithm_name: str) -> tuple[str, ...]:
         return _FALLBACK_INPUT_KEYS
 
 
-def _extract_input_layer_ids(params: dict) -> list[str]:
+def _input_keys_for(algorithm_name: Any) -> tuple[str, ...]:
+    """Vector-input parameter names for an algorithm: registry keys plus the fallback list."""
+    registry_keys: tuple[str, ...] = ()
+    if isinstance(algorithm_name, str):
+        registry_keys = _get_input_keys(algorithm_name)
+    return tuple(dict.fromkeys((*registry_keys, *_FALLBACK_INPUT_KEYS)))
+
+
+def _extract_input_layer_ids(params: dict, keys: tuple[str, ...] | None = None) -> list[str]:
     """Extract layer IDs from processing parameters.
 
-    Looks for common parameter names that reference input layers.
-    Handles both single layer and list-of-layers parameters.
-    Returns a list of layer ID strings.
+    Looks at the given parameter names (default: the fallback key list) that
+    reference input layers. Handles both single layer and list-of-layers
+    parameters. Returns a list of layer ID strings.
     """
     ids: list[str] = []
 
-    for key in _FALLBACK_INPUT_KEYS:
+    for key in keys or _FALLBACK_INPUT_KEYS:
         value = params.get(key)
         if value is None:
             continue
-        if isinstance(value, list):
-            for item in value:
-                layer_id = _get_layer_id(item)
-                if layer_id:
-                    ids.append(layer_id)
-        else:
-            layer_id = _get_layer_id(value)
-            if layer_id:
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            layer_id = _get_layer_id(_resolve_output_layer_definition(item))
+            if layer_id and layer_id not in ids:
                 ids.append(layer_id)
 
     return ids
@@ -244,7 +294,9 @@ def _get_output_layer_info(result: dict, params: dict) -> tuple[str | None, str 
             gpkg_path = source_path
     elif isinstance(output, str) and _is_gpkg_path(output):
         gpkg_path = _strip_layername(output)
-        layer_name = os.path.splitext(os.path.basename(gpkg_path))[0]
+        # Processing returns GeoPackage outputs as "file.gpkg|layername=table";
+        # prefer the table name over the file name.
+        layer_name = _layername_from_uri(output) or os.path.splitext(os.path.basename(gpkg_path))[0]
 
     # Check explicit output parameter for gpkg path
     if gpkg_path is None:
@@ -252,6 +304,8 @@ def _get_output_layer_info(result: dict, params: dict) -> tuple[str | None, str 
         output_param = _resolve_output_layer_definition(output_param)
         if isinstance(output_param, str) and _is_gpkg_path(output_param):
             gpkg_path = _strip_layername(output_param)
+            if layer_name is None:
+                layer_name = _layername_from_uri(output_param) or os.path.splitext(os.path.basename(gpkg_path))[0]
 
     return layer_id, gpkg_path, layer_name
 
@@ -274,8 +328,10 @@ def _record_processing_lineage(
     if isinstance(inner, dict):
         params = {**params, **inner}
 
-    input_layer_ids = _extract_input_layer_ids(params)
+    input_keys = _input_keys_for(algorithm_name)
+    input_layer_ids = _extract_input_layer_ids(params, input_keys)
     layer_id, gpkg_path, layer_name = _get_output_layer_info(result, params)
+    created_by = _get_created_by()
 
     logger.info(
         "Lineage hook fired: algorithm=%s, gpkg_path=%s, layer_id=%s, result_OUTPUT=%r, params_OUTPUT=%r",
@@ -294,7 +350,7 @@ def _record_processing_lineage(
     parent_metadata: list[dict] = []
     parent_checksums: dict[str, str] = {}
 
-    for key in _FALLBACK_INPUT_KEYS:
+    for key in input_keys:
         value = params.get(key)
         if value is None:
             continue
@@ -325,7 +381,7 @@ def _record_processing_lineage(
         "parent_metadata": parent_metadata,
         "parent_checksums": parent_checksums,
         "output_crs_epsg": output_crs_epsg,
-        "created_by": _get_created_by(),
+        "created_by": created_by,
     }
 
     if gpkg_path:
@@ -334,19 +390,18 @@ def _record_processing_lineage(
             gpkg_path=gpkg_path,
             layer_name=layer_name,
             tool=algorithm_name,
-            params=_sanitize_params(params),
+            params=entry["params"],
             parents=parents,
             parent_metadata=parent_metadata,
             parent_checksums=parent_checksums,
             output_crs_epsg=output_crs_epsg,
-            created_by=_get_created_by(),
+            created_by=created_by,
         )
-        # Also flush any buffered chain for input layers
-        if layer_id:
-            for input_id in input_layer_ids:
-                chain = _memory_buffer.get_chain(input_id)
-                if chain:
-                    _memory_buffer.flush(input_id, gpkg_path)
+        # Flush any buffered chain for memory-layer inputs into the output file.
+        # This must not depend on layer_id: algorithms such as native:savefeatures
+        # return a plain path string rather than a loaded layer.
+        for input_id in input_layer_ids:
+            _memory_buffer.flush(input_id, gpkg_path)
         logger.debug("Recorded processing lineage to %s", gpkg_path)
     elif layer_id:
         # Output is a temporary/memory layer — buffer it
@@ -389,14 +444,16 @@ def _sanitize_params(params: dict) -> dict:
     return safe
 
 
-def install_hooks() -> None:
+def install_hooks(iface: Any = None) -> None:
     """Install all lineage recording hooks.
 
     - Monkey-patches processing.run() (Python API calls)
-    - Monkey-patches AlgorithmDialog.finish() (GUI toolbox runs)
-    - Monkey-patches QgsVectorFileWriter.writeAsVectorFormatV3()
-    - Connects layersAdded signal for edit tracking
+    - Monkey-patches the toolbox dialog's finish() (GUI toolbox runs)
+    - Monkey-patches QgsVectorFileWriter.writeAsVectorFormatV3() (Python callers)
+    - Connects QgisInterface.layerSavedAs for GUI "Save Features As" exports
+    - Connects layersAdded / layersWillBeRemoved signals for edit tracking
 
+    ``iface`` is the QgisInterface; when omitted the layerSavedAs hook is skipped.
     Safe to call multiple times (idempotent).
     """
     if _hook_state["installed"]:
@@ -406,6 +463,7 @@ def install_hooks() -> None:
     _install_processing_hook()
     _install_dialog_hook()
     _install_filewriter_hook()
+    _install_layer_saved_as_hook(iface)
     _install_edit_signals()
     _hook_state["installed"] = True
     logger.info("GeoLineage hooks installed")
@@ -427,6 +485,7 @@ def uninstall_hooks() -> None:
     _uninstall_processing_hook()
     _uninstall_dialog_hook()
     _uninstall_filewriter_hook()
+    _uninstall_layer_saved_as_hook()
     _uninstall_edit_signals()
     _hook_state["installed"] = False
     logger.info("GeoLineage hooks uninstalled")
@@ -453,8 +512,8 @@ def _install_processing_hook() -> None:
 
         try:
             if depth == 1 and result is not None:
-                # Extract algorithm name from first positional arg
-                algorithm_name = args[0] if args else kwargs.get("algOrName", "unknown")
+                # First positional arg is an algorithm id or a QgsProcessingAlgorithm
+                algorithm_name = _algorithm_id(args[0] if args else kwargs.get("algOrName", "unknown"))
                 run_params = args[1] if len(args) > 1 else kwargs.get("parameters", {})
                 if isinstance(run_params, dict) and isinstance(result, dict):
                     _record_processing_lineage(algorithm_name, run_params, result)
@@ -513,20 +572,43 @@ def _extract_dialog_parameters(dialog_self: object) -> dict:
     return history_details.get("parameters", {})
 
 
-def _install_dialog_hook() -> None:
-    """Monkey-patch AlgorithmDialog.finish() for GUI-initiated algorithm runs.
+def _import_dialog_class() -> Any:
+    """Return the processing toolbox dialog class for the running QGIS version.
 
-    The QGIS Processing toolbox dialog does NOT call processing.run().
-    Instead it calls AlgorithmExecutor.execute() or QgsProcessingAlgRunnerTask
-    directly, both of which converge in AlgorithmDialog.finish().
+    QGIS 3.x and 4.0 ship ``processing.gui.AlgorithmDialog.AlgorithmDialog``.
+    From QGIS 4.2 the dialog logic lives in
+    ``processing.gui.algorithm_widget.AlgorithmWidget``; both expose the same
+    ``finish(self, successful, result, context, feedback, in_place=False)``
+    method and the same ``history_details`` dict. Both are private QGIS API.
     """
     try:
         from processing.gui.AlgorithmDialog import AlgorithmDialog
+
+        return AlgorithmDialog
     except ImportError:
-        logger.warning("AlgorithmDialog not available — skipping dialog hook")
+        pass
+    try:
+        from processing.gui.algorithm_widget import AlgorithmWidget
+
+        return AlgorithmWidget
+    except ImportError:
+        return None
+
+
+def _install_dialog_hook() -> None:
+    """Monkey-patch the toolbox dialog's finish() for GUI-initiated algorithm runs.
+
+    The QGIS Processing toolbox dialog does NOT call processing.run().
+    Instead it calls AlgorithmExecutor.execute() or QgsProcessingAlgRunnerTask
+    directly, both of which converge in the dialog's finish().
+    """
+    dialog_cls = _import_dialog_class()
+    if dialog_cls is None or not hasattr(dialog_cls, "finish"):
+        logger.warning("Processing toolbox dialog class not available — GUI algorithm runs will not be recorded")
         return
 
-    original_finish = AlgorithmDialog.finish
+    original_finish = dialog_cls.finish
+    _hook_state["dialog_class"] = dialog_cls
     _hook_state["dialog_original_finish"] = original_finish
 
     def _wrapped_finish(dialog_self, successful, result, context, feedback, in_place=False):
@@ -546,29 +628,26 @@ def _install_dialog_hook() -> None:
         except Exception:
             logger.exception("Dialog lineage recording failed; operation unaffected")
 
-    AlgorithmDialog.finish = _wrapped_finish
+    dialog_cls.finish = _wrapped_finish
     _hook_state["dialog_wrapper_finish"] = _wrapped_finish
-    logger.debug("AlgorithmDialog.finish() monkey-patched")
+    logger.debug("%s.finish() monkey-patched", dialog_cls.__name__)
 
 
 def _uninstall_dialog_hook() -> None:
-    """Restore original AlgorithmDialog.finish() with identity check."""
+    """Restore the original toolbox dialog finish() with identity check."""
     original = _hook_state.get("dialog_original_finish")
     wrapper = _hook_state.get("dialog_wrapper_finish")
-    if original is None:
+    dialog_cls = _hook_state.get("dialog_class")
+    if original is None or dialog_cls is None:
         return
 
-    try:
-        from processing.gui.AlgorithmDialog import AlgorithmDialog
-    except ImportError:
-        return
-
-    if AlgorithmDialog.finish is wrapper:
-        AlgorithmDialog.finish = original
-        logger.debug("AlgorithmDialog.finish() restored")
+    if dialog_cls.finish is wrapper:
+        dialog_cls.finish = original
+        logger.debug("%s.finish() restored", dialog_cls.__name__)
     else:
-        logger.warning("AlgorithmDialog.finish() identity mismatch — skipping restoration")
+        logger.warning("%s.finish() identity mismatch — skipping restoration", dialog_cls.__name__)
 
+    _hook_state["dialog_class"] = None
     _hook_state["dialog_original_finish"] = None
     _hook_state["dialog_wrapper_finish"] = None
 
@@ -627,13 +706,45 @@ def _uninstall_filewriter_hook() -> None:
     _hook_state["filewriter_wrapper"] = None
 
 
+def _install_layer_saved_as_hook(iface: Any) -> None:
+    """Connect QgisInterface.layerSavedAs for GUI "Save Features As" exports.
+
+    The Save As dialog runs QgsVectorFileWriterTask in C++, which never goes
+    through the Python-side writeAsVectorFormatV3 wrapper, so this signal is
+    the only way to see GUI exports.
+    """
+    signal = getattr(iface, "layerSavedAs", None) if iface is not None else None
+    if signal is None or not hasattr(signal, "connect"):
+        logger.warning("QgisInterface.layerSavedAs not available — GUI exports will not be recorded")
+        return
+    signal.connect(_on_layer_saved_as)
+    _hook_state["iface"] = iface
+    logger.debug("layerSavedAs signal connected")
+
+
+def _uninstall_layer_saved_as_hook() -> None:
+    """Disconnect the layerSavedAs signal."""
+    iface = _hook_state.get("iface")
+    if iface is None:
+        return
+    with contextlib.suppress(TypeError, RuntimeError, AttributeError):
+        iface.layerSavedAs.disconnect(_on_layer_saved_as)
+    _hook_state["iface"] = None
+
+
+def _on_layer_saved_as(layer: Any, path: str) -> None:
+    """Handle layerSavedAs(layer, path) — record an export when the target is a GeoPackage."""
+    try:
+        _record_export_from_layer(layer, path)
+    except Exception:
+        logger.exception("Export lineage recording failed; export unaffected")
+
+
 def _record_export_lineage(args: tuple, kwargs: dict, result: Any) -> None:
     """Record lineage for a QgsVectorFileWriter export.
 
     writeAsVectorFormatV3(layer, fileName, transformContext, options, ...)
     """
-    from .recorder import record_export
-
     # Check if export succeeded — result is a tuple (error_code, error_message)
     if isinstance(result, tuple) and len(result) >= 1:
         error_code = result[0]
@@ -648,12 +759,19 @@ def _record_export_lineage(args: tuple, kwargs: dict, result: Any) -> None:
     if source_layer is None:
         return
 
+    # Extract output file name (second arg)
+    output_path = args[1] if len(args) > 1 else kwargs.get("fileName")
+    _record_export_from_layer(source_layer, output_path)
+
+
+def _record_export_from_layer(source_layer: Any, output_path: Any) -> None:
+    """Record an export of ``source_layer`` to ``output_path`` if both are GeoPackage-backed."""
+    from .recorder import record_export
+
     source_path = _get_layer_source_path(source_layer)
     if not source_path:
         return
 
-    # Extract output file name (second arg)
-    output_path = args[1] if len(args) > 1 else kwargs.get("fileName")
     if not output_path or not _is_gpkg_path(output_path):
         return
 
@@ -698,6 +816,9 @@ def _install_edit_signals() -> None:
     project = QgsProject.instance()
     connection = project.layersAdded.connect(_on_layers_added)
     _hook_state["signal_connections"].append(("layersAdded", connection))
+    with contextlib.suppress(AttributeError, TypeError):
+        project.layersWillBeRemoved.connect(_on_layers_will_be_removed)
+        _hook_state["signal_connections"].append(("layersWillBeRemoved", None))
 
     # Connect to existing GeoPackage layers
     for _layer_id, layer in project.mapLayers().items():
@@ -716,12 +837,16 @@ def _uninstall_edit_signals() -> None:
     project = QgsProject.instance()
     with contextlib.suppress(TypeError, RuntimeError):
         project.layersAdded.disconnect(_on_layers_added)
+    with contextlib.suppress(TypeError, RuntimeError, AttributeError):
+        project.layersWillBeRemoved.disconnect(_on_layers_will_be_removed)
 
     # Disconnect per-layer signals
     for _layer_id, handler in list(_hook_state.get("_layer_edit_connections", {}).items()):
         with contextlib.suppress(TypeError, RuntimeError):
             handler()  # Each handler is a disconnect callable
 
+    with _edit_snapshots_lock:
+        _pending_edit_snapshots.clear()
     _hook_state["signal_connections"] = []
     _hook_state["_layer_edit_connections"] = {}
     logger.debug("Edit signals disconnected")
@@ -734,6 +859,18 @@ def _on_layers_added(layers: list) -> None:
             _connect_edit_signals(layer)
         except Exception:
             logger.exception("Failed to connect edit signals for layer")
+
+
+def _on_layers_will_be_removed(layer_ids: list) -> None:
+    """Handle layersWillBeRemoved — drop edit-tracking state for layers leaving the project."""
+    edit_connections = _hook_state.get("_layer_edit_connections", {})
+    for layer_id in layer_ids:
+        handler = edit_connections.pop(layer_id, None)
+        if handler is not None:
+            with contextlib.suppress(TypeError, RuntimeError):
+                handler()
+        with _edit_snapshots_lock:
+            _pending_edit_snapshots.pop(layer_id, None)
 
 
 def _connect_edit_signals(layer: Any) -> None:
@@ -758,6 +895,11 @@ def _connect_edit_signals(layer: Any) -> None:
 
     layer_id = layer.id() if hasattr(layer, "id") else str(id(layer))
 
+    edit_connections = _hook_state.setdefault("_layer_edit_connections", {})
+    if layer_id in edit_connections:
+        logger.debug("Edit signals already connected for layer %s", layer_id)
+        return
+
     def _on_before_commit() -> None:
         """Snapshot edit buffer counts before the commit clears them."""
         try:
@@ -780,8 +922,6 @@ def _connect_edit_signals(layer: Any) -> None:
     layer.afterCommitChanges.connect(_on_after_commit)
 
     # Store disconnect callable
-    edit_connections = _hook_state.setdefault("_layer_edit_connections", {})
-
     def _disconnect() -> None:
         with contextlib.suppress(TypeError, RuntimeError):
             layer.beforeCommitChanges.disconnect(_on_before_commit)

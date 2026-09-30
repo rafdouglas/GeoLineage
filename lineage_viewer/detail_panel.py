@@ -58,7 +58,7 @@ class DetailPanel(_get_base_class()):
         self._scroll.setWidgetResizable(True)
         self._scroll_content = QWidget()
         self._scroll_layout = QVBoxLayout(self._scroll_content)
-        self._scroll_layout.setAlignment(Qt.AlignTop)
+        self._scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._scroll_content)
         layout.addWidget(self._scroll)
 
@@ -92,7 +92,7 @@ class DetailPanel(_get_base_class()):
 
         for entry in node.entries:
             frame = QFrame()
-            frame.setFrameShape(QFrame.StyledPanel)
+            frame.setFrameShape(QFrame.Shape.StyledPanel)
             frame.setStyleSheet("QFrame { border: 1px solid #ddd; border-radius: 4px; padding: 8px; margin: 2px; }")
             entry_layout = QVBoxLayout(frame)
 
@@ -152,7 +152,7 @@ class DetailPanel(_get_base_class()):
 
                 params_label = QLabel(params_text)
                 params_label.setWordWrap(True)
-                params_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                params_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 params_label.setStyleSheet(
                     "font-size: 10px; font-family: monospace; background: #f5f5f5; padding: 4px;"
                 )

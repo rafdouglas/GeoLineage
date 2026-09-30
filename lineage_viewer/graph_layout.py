@@ -63,6 +63,7 @@ class EdgePath:
     source: str
     target: str
     waypoints: tuple[tuple[float, float], ...]
+    entry_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -186,12 +187,14 @@ def _break_cycles(
     in_stack: set[str] = set()
     reversed_edges: set[tuple[str, str]] = set()
 
-    # Work on copies
-    ac: dict[str, list[str]] = {n: list(ch) for n, ch in children_map.items()}
-    ap: dict[str, list[str]] = {n: list(pa) for n, pa in parents_map.items()}
+    # Work on copies, dropping self-loops: reversing a self-loop yields the
+    # same self-loop, which then keeps the node's in-degree above zero and
+    # breaks rank assignment.
+    ac: dict[str, list[str]] = {n: [c for c in ch if c != n] for n, ch in children_map.items()}
+    ap: dict[str, list[str]] = {n: [p for p in pa if p != n] for n, pa in parents_map.items()}
 
     # Find roots (no parents)
-    roots = [n for n in all_nodes if not parents_map[n]]
+    roots = [n for n in all_nodes if not ap[n]]
     # If no roots (all nodes in cycles), start from any node
     if not roots:
         roots = sorted(all_nodes)
@@ -526,7 +529,7 @@ def _route_edges(
         src = edge.parent_path
         tgt = edge.child_path
 
-        if src not in all_positions or tgt not in all_positions:
+        if src == tgt or src not in all_positions or tgt not in all_positions:
             continue
 
         # Check if this edge was reversed during cycle breaking
@@ -570,6 +573,8 @@ def _route_edges(
         tgt_half_w = node_widths.get(tgt, config.node_width) / 2
         waypoints.append((tx + tgt_half_w, ty))
 
-        edge_paths.append(EdgePath(source=src, target=tgt, waypoints=tuple(waypoints)))
+        edge_paths.append(
+            EdgePath(source=src, target=tgt, waypoints=tuple(waypoints), entry_id=getattr(edge, "entry_id", 0))
+        )
 
     return tuple(edge_paths)

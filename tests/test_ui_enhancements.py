@@ -262,7 +262,7 @@ class TestMultiGpkgInspectDialog:
     def test_uses_userrole_for_gpkg_path(self):
         """Verify UserRole is used to store per-row gpkg_path."""
         source = _INSPECT_DIALOG_PATH.read_text()
-        assert "Qt.UserRole" in source
+        assert "Qt.ItemDataRole.UserRole" in source  # scoped spelling works on Qt5 and Qt6
 
 
 # ===========================================================================

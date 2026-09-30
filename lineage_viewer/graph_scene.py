@@ -42,7 +42,9 @@ class LineageGraphScene(_get_base_class()):
         self._on_expand_requested = None
 
         self._node_items: dict[str, object] = {}
-        self._edge_items: list[object] = []
+        # Keyed by (parent_path, child_path, entry_id) so that several entries
+        # linking the same pair of files get their own item.
+        self._edge_items: dict[tuple[str, str, int], object] = {}
         self._current_graph: LineageGraph | None = None
         self._config = LayoutConfig()
 
@@ -90,16 +92,15 @@ class LineageGraphScene(_get_base_class()):
             self._node_items[path] = item
 
         # Create edge items from edge_paths and wire node-edge connections
+        edges_by_key = {(e.parent_path, e.child_path, e.entry_id): e for e in graph.edges}
         for edge_path in result.edge_paths:
-            matching_edge = next(
-                (e for e in graph.edges if e.parent_path == edge_path.source and e.child_path == edge_path.target),
-                None,
-            )
+            key = (edge_path.source, edge_path.target, edge_path.entry_id)
+            matching_edge = edges_by_key.get(key)
             if matching_edge is None:
                 continue
             item = GraphEdgeItem(matching_edge, edge_path.waypoints, self._config)
             self.addItem(item)
-            self._edge_items.append(item)
+            self._edge_items[key] = item
 
             # Wire edge to its source and target node items
             source_node_item = self._node_items.get(edge_path.source)
@@ -108,6 +109,10 @@ class LineageGraphScene(_get_base_class()):
                 item.set_node_items(source_node_item, target_node_item)
                 source_node_item.add_connected_edge(item)
                 target_node_item.add_connected_edge(item)
+
+        # An implicit scene rect only ever grows; pin it to the current items so
+        # that a small graph shown after a large one does not export with huge margins.
+        self.setSceneRect(self.itemsBoundingRect())
 
     def reset_layout(self) -> None:
         """Re-run Sugiyama layout and reposition existing items.
@@ -134,9 +139,13 @@ class LineageGraphScene(_get_base_class()):
                 node_item.setPos(pos.x, pos.y)
 
         # Explicitly reset edge waypoints to layout-computed paths
-        for i, edge_item in enumerate(self._edge_items):
-            if i < len(result.edge_paths):
-                edge_item.set_waypoints(result.edge_paths[i].waypoints)
+        for edge_path in result.edge_paths:
+            edge_item = self._edge_items.get((edge_path.source, edge_path.target, edge_path.entry_id))
+            if edge_item is not None:
+                edge_item.set_waypoints(edge_path.waypoints)
+
+        # Keep the scene rect tight so exports and fit-to-view use the current graph only
+        self.setSceneRect(self.itemsBoundingRect())
 
     def highlight_nodes(self, filename_pattern: str) -> None:
         """Highlight nodes whose filename matches pattern (case-insensitive substring).
@@ -163,6 +172,10 @@ class LineageGraphScene(_get_base_class()):
     def fit_in_view(self):
         """Return the bounding rect of all items."""
         return self.itemsBoundingRect()
+
+    def export_rect(self, margin: float = 20.0):
+        """Return the rect to render for exports: the items' bounding rect plus a margin."""
+        return self.itemsBoundingRect().adjusted(-margin, -margin, margin, margin)
 
     def mousePressEvent(self, event) -> None:
         """Detect which GraphNodeItem was clicked and notify."""
@@ -217,7 +230,7 @@ class LineageGraphScene(_get_base_class()):
             menu.addSeparator()
             expand_action = menu.addAction("Expand")
 
-        chosen = menu.exec_(event.screenPos())
+        chosen = menu.exec(event.screenPos())
         if chosen == copy_action:
             from qgis.PyQt.QtWidgets import QApplication
 

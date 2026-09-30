@@ -59,15 +59,23 @@ def export_svg(scene: QGraphicsScene, path: str) -> None:
     from qgis.PyQt.QtGui import QPainter
     from qgis.PyQt.QtSvg import QSvgGenerator
 
-    rect = scene.sceneRect()
+    rect = _export_rect(scene)
     generator = QSvgGenerator()
     generator.setFileName(path)
     generator.setSize(rect.size().toSize())
     generator.setViewBox(QRectF(0, 0, rect.width(), rect.height()))
 
     painter = QPainter(generator)
-    scene.render(painter)
+    scene.render(painter, QRectF(0, 0, rect.width(), rect.height()), rect)
     painter.end()
+
+
+def _export_rect(scene: QGraphicsScene):
+    """Bounding rect of the current items (not the ever-growing implicit sceneRect)."""
+    export_rect = getattr(scene, "export_rect", None)
+    if callable(export_rect):
+        return export_rect()
+    return scene.itemsBoundingRect()
 
 
 def export_png(scene: QGraphicsScene, path: str, dpi: int = 150) -> None:
@@ -78,7 +86,7 @@ def export_png(scene: QGraphicsScene, path: str, dpi: int = 150) -> None:
     from qgis.PyQt.QtCore import QRectF, Qt
     from qgis.PyQt.QtGui import QImage, QPainter
 
-    rect = scene.sceneRect()
+    rect = _export_rect(scene)
     scale = dpi / 96.0
     width = int(rect.width() * scale)
     height = int(rect.height() * scale)
@@ -90,11 +98,11 @@ def export_png(scene: QGraphicsScene, path: str, dpi: int = 150) -> None:
         width = int(width * ratio)
         height = int(height * ratio)
 
-    image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
-    image.fill(Qt.white)
+    image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.white)
 
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     scene.render(painter, QRectF(0, 0, width, height), rect)
     painter.end()
 

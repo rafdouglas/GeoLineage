@@ -12,14 +12,14 @@ A QGIS plugin that tracks data lineage in GeoPackage files. Every processing ste
 
 - **Processing recording** — Automatically captures every `processing.run()` operation with full parameter details, input/output references, and checksums
 - **Edit tracking** — Records manual edits (features added, modified, deleted) when you save changes to a GeoPackage layer
-- **Export detection** — Logs exports via "Save Features As..." and `native:savefeatures`, linking the new file back to its source
+- **Export detection** — Logs exports via "Save Features As..." (through the `layerSavedAs` signal), `native:savefeatures` and direct `QgsVectorFileWriter` calls, linking the new file back to its source
 - **Memory buffer with chain-of-custody** — Tracks lineage through temporary/memory layers across multi-step processing chains, flushing the complete history when the final result is saved to disk
-- **Lineage graph viewer** — Visualizes the full DAG of file ancestry with color-coded node status (planned)
-- **Lineage manager** — Inspect, edit, clean up, and relink lineage entries (planned)
+- **Lineage graph viewer** — Visualizes the full DAG of file ancestry with color-coded node status
+- **Lineage manager** — Inspect, edit, clean up, and relink lineage entries
 
 ## Requirements
 
-- **QGIS 3.34 LTS** or later
+- **QGIS 3.34 LTR** or later, including **QGIS 4.x** (Qt 6)
 - Python 3.10+
 
 ## Installation
@@ -40,11 +40,12 @@ Lineage data is stored in non-standard tables (`_lineage`, `_lineage_meta`) that
 
 ## How It Works
 
-GeoLineage intercepts QGIS operations through three mechanisms:
+GeoLineage intercepts QGIS operations through four mechanisms:
 
 1. **`processing.run()` wrapper** — A closure-based monkey-patch captures algorithm name, parameters, and input/output layers. Exception-isolated so hook failures never break QGIS operations.
-2. **`QgsVectorFileWriter` wrapper** — Catches direct "Save Features As..." exports that bypass the processing framework.
-3. **Edit signals** — Connects to `afterCommitChanges` on GeoPackage-backed layers to record manual edits.
+2. **Toolbox dialog wrapper** — Wraps the Processing toolbox dialog's `finish()` so algorithms run from the GUI (which never call `processing.run()`) are captured too.
+3. **`layerSavedAs` signal and `QgsVectorFileWriter` wrapper** — The QGIS "Save Features As..." dialog runs in C++, so it is observed through the `QgisInterface.layerSavedAs` signal; direct Python calls to `writeAsVectorFormatV3` are wrapped.
+4. **Edit signals** — Connects to `beforeCommitChanges` / `afterCommitChanges` on GeoPackage-backed layers to record manual edits.
 
 All recording is non-destructive and additive (new rows only, never modifies existing data). A re-entrancy guard prevents duplicate entries from nested processing calls.
 
@@ -91,8 +92,11 @@ GeoLineage/
 │   ├── hooks.py             # Monkey-patches and signal wiring
 │   └── settings.py          # Constants and setting keys
 ├── lineage_retrieval/
+│   ├── graph_builder.py     # Traverse parent references into a lineage graph
 │   ├── path_resolver.py     # Cross-platform path resolution
 │   └── cache.py             # Lineage cache with mtime invalidation
+├── lineage_viewer/          # Dock widget, Sugiyama layout, graph scene, exports
+├── lineage_manager/         # Manage Lineage, cleanup, relink and settings dialogs
 └── tests/
     ├── conftest.py           # Shared fixtures (temp GeoPackages)
     └── test_*.py             # Test modules

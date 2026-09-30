@@ -24,6 +24,7 @@ class GeoLineagePlugin:
         self.toolbar = None
         self.toggle_action = None
         self._enabled = False
+        self._restoring_state = False
         self.dock_widget = None
         self.show_lineage_action = None
         self.manage_action = None
@@ -84,11 +85,17 @@ class GeoLineagePlugin:
 
         self.layer_context_menu_action = QAction("Show Lineage", self.iface.mainWindow())
         self.layer_context_menu_action.triggered.connect(self._show_lineage_from_context_menu)
-        with contextlib.suppress(Exception):
-            self.iface.addCustomActionForLayerType(self.layer_context_menu_action, "", QgsMapLayer.VectorLayer, True)
+        try:
+            self.iface.addCustomActionForLayerType(
+                self.layer_context_menu_action, "", QgsMapLayer.LayerType.VectorLayer, True
+            )
+        except (AttributeError, TypeError):
+            logger.warning("Could not add layer context menu action", exc_info=True)
 
-        # Restore state from project on load
+        # Restore state from project on load, and reset it when a new project starts
         QgsProject.instance().readProject.connect(self._on_project_read)
+        with contextlib.suppress(AttributeError, TypeError):
+            self.iface.newProjectCreated.connect(self._on_project_read)
 
         # Restore from current project if already open
         self._restore_toggle_state()
@@ -103,9 +110,11 @@ class GeoLineagePlugin:
         if self._enabled:
             self._disable_recording()
 
-        # Disconnect project signal
+        # Disconnect project signals
         with contextlib.suppress(TypeError, RuntimeError):
             QgsProject.instance().readProject.disconnect(self._on_project_read)
+        with contextlib.suppress(TypeError, RuntimeError, AttributeError):
+            self.iface.newProjectCreated.disconnect(self._on_project_read)
 
         # Remove viewer dock widget
         if self.dock_widget:
@@ -138,7 +147,11 @@ class GeoLineagePlugin:
         if self.toggle_action:
             self.iface.removePluginMenu("&GeoLineage", self.toggle_action)
         if self.toolbar:
-            del self.toolbar
+            # The toolbar is owned by the main window; dropping the Python
+            # reference alone leaves it (duplicated) after a plugin reload.
+            with contextlib.suppress(RuntimeError):
+                self.iface.mainWindow().removeToolBar(self.toolbar)
+                self.toolbar.deleteLater()
             self.toolbar = None
 
         self.toggle_action = None
@@ -151,8 +164,10 @@ class GeoLineagePlugin:
         else:
             self._disable_recording()
 
-        # Save state to project
-        self._save_toggle_state(checked)
+        # Save state to project (not while restoring it from the project itself,
+        # which would mark a freshly opened project as modified)
+        if not self._restoring_state:
+            self._save_toggle_state(checked)
 
         # Update icon
         self._update_icon(checked)
@@ -161,7 +176,7 @@ class GeoLineagePlugin:
         """Enable lineage recording by installing hooks."""
         from .lineage_core.hooks import install_hooks
 
-        install_hooks()
+        install_hooks(self.iface)
         self._enabled = True
         logger.info("Lineage recording enabled")
 
@@ -185,10 +200,16 @@ class GeoLineagePlugin:
         from qgis.core import QgsProject
 
         project = QgsProject.instance()
-        enabled, ok = project.readBoolEntry("GeoLineage", _PROJECT_PROPERTY_KEY, False)
-        if ok and enabled and self.toggle_action:
-            # Set checked state — this will trigger _on_toggle
-            self.toggle_action.setChecked(True)
+        enabled, _ok = project.readBoolEntry("GeoLineage", _PROJECT_PROPERTY_KEY, False)
+        if self.toggle_action is None:
+            return
+        # Apply the stored state in both directions, so a project saved with
+        # recording off does not inherit the previous project's recording.
+        self._restoring_state = True
+        try:
+            self.toggle_action.setChecked(bool(enabled))  # triggers _on_toggle if it changes
+        finally:
+            self._restoring_state = False
 
     def _on_project_read(self) -> None:
         """Handle project load — restore toggle state."""
@@ -234,7 +255,7 @@ class GeoLineagePlugin:
             from .lineage_viewer.dock_widget import LineageDockWidget
 
             self.dock_widget = LineageDockWidget(self.iface, self.iface.mainWindow())
-            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
+            self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
 
         project_dir = QgsProject.instance().homePath() or os.path.dirname(gpkg_path)
         self.dock_widget.show_lineage(gpkg_path, project_dir)
@@ -253,14 +274,14 @@ class GeoLineagePlugin:
             dock_widget=self.dock_widget,
             parent=self.iface.mainWindow(),
         )
-        dlg.exec_()
+        dlg.exec()
 
     def _show_settings_dialog(self) -> None:
         """Open SettingsDialog."""
         from .lineage_manager.settings_dialog import SettingsDialog
 
         dlg = SettingsDialog(parent=self.iface.mainWindow())
-        dlg.exec_()
+        dlg.exec()
 
     def _update_icon(self, enabled: bool) -> None:
         """Update toggle action icon and tooltip based on state."""
